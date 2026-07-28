@@ -106,15 +106,53 @@ def project do
 end
 ```
 
+## Dispatch
+
+A call that picks its target at runtime is only as pure as the
+implementations it can reach, so **all of them have to be pure for the
+dispatch to be pure**. A protocol is just a behaviour whose
+implementations live in their own modules, so both go through one rule:
+a call to a module that declares the callback joins over the
+implementations.
+
+```elixir
+defimpl String.Chars, for: Loud do
+  def to_string(loud) do
+    IO.puts("converting")   # one impure implementation is enough
+    loud.name
+  end
+end
+
+"hello #{term}"             # impure: it can reach that implementation
+```
+
+When the call site says which implementation it will reach, only that
+one counts:
+
+```elixir
+for x <- xs, into: %{}      # pure — only Collectable.Map can be reached
+for x <- xs, into: stream   # impure if a reachable Collectable writes
+```
+
+The same holds without a module name at all, because the *function* name
+is often enough — `calendar.date_to_string(y, m, d)` names no module,
+but `date_to_string/3` is a `Calendar` callback, so the implementations
+are known.
+
+Implementations are found without being asked for: analysing a module
+pulls in the protocols it dispatches to along with their
+implementations.
+
 ## How it works
 
 1. **Scan.** Every function body is walked for the things that can have
    an effect: calls, fun references, `!`, `receive`. Each call argument
    keeps a shape — a resolvable fun, a parameter of the enclosing
-   function, a literal, or opaque.
+   function, a literal of a known type, or opaque.
 2. **Resolve.** Each call becomes a dependency on another analysed
-   function, a known effect, or an unknown. Applying a parameter makes
-   the function higher-order at that position rather than impure.
+   function, a set of dependencies on the implementations it dispatches
+   to, a known effect, or an unknown. Applying a parameter makes the
+   function higher-order at that position rather than impure.
 3. **Fixpoint.** Effects propagate backwards along the call graph until
    nothing changes. Recursion needs no special case: the least fixpoint
    starts at "no effects" and only grows.
@@ -129,10 +167,14 @@ lie, and it always wins over what the code appears to do.
 
 - **Dynamic dispatch.** `apply(module, fun, args)` on computed values is
   `unknown`, as is a fun that was stored in a data structure and applied
-  later.
-- **Protocol dispatch is assumed pure.** `Enumerable`, `Collectable` and
-  `Inspect` implementations are taken on trust, so
-  `for x <- xs, into: File.stream!(path)` is not reported as impure.
+  later. A dispatch is only resolved when the callback name is known.
+- **Only the implementations it can see.** A dispatch joins over the
+  implementations in the analysis. One that is never compiled into the
+  project — loaded at runtime, or in an application that was not
+  analysed — cannot be accounted for.
+- **`Kernel.inspect/1` is trusted.** Inspecting is treated as pure
+  rather than dispatched through `Inspect`, which would make almost
+  every debug helper impure.
 - **Creating a fun counts as calling it.** `fn -> IO.puts("hi") end`
   makes the enclosing function impure even if the fun is never applied.
   Deliberately conservative.

@@ -33,6 +33,57 @@ defmodule Pure.Beam do
   end
 
   @doc """
+  Add every protocol the given forms dispatch to, and its implementations.
+
+  A call to `Collectable.into/1` is only as pure as the implementations
+  it can reach, so they have to be part of the analysis. The protocol
+  module itself comes along because its `-callback` declarations are
+  what makes the call recognisable as a dispatch.
+  """
+  @spec load_implementations({%{module() => [tuple()]}, [failure()]}) ::
+          {%{module() => [tuple()]}, [failure()]}
+  def load_implementations({forms, failures}) do
+    wanted =
+      forms
+      |> referenced_modules()
+      |> Enum.filter(&protocol?/1)
+      |> Enum.flat_map(&[&1 | implementations(&1)])
+      |> Enum.reject(&Map.has_key?(forms, &1))
+      |> Enum.uniq()
+
+    {loaded, more_failures} = load(wanted)
+    {Map.merge(loaded, forms), failures ++ more_failures}
+  end
+
+  defp referenced_modules(forms) do
+    forms |> Map.values() |> remotes(MapSet.new())
+  end
+
+  defp remotes({:remote, _anno, {:atom, _, module}, _function}, acc), do: MapSet.put(acc, module)
+  defp remotes(list, acc) when is_list(list), do: Enum.reduce(list, acc, &remotes/2)
+  defp remotes(tuple, acc) when is_tuple(tuple), do: tuple |> Tuple.to_list() |> remotes(acc)
+  defp remotes(_leaf, acc), do: acc
+
+  defp protocol?(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__protocol__, 1)
+  end
+
+  defp implementations(protocol) do
+    case protocol.__protocol__(:impls) do
+      {:consolidated, types} -> Enum.map(types, &Module.concat(protocol, &1))
+      _not_consolidated -> extract_implementations(protocol)
+    end
+  end
+
+  defp extract_implementations(protocol) do
+    protocol
+    |> Protocol.extract_impls(:code.get_path())
+    |> Enum.map(&Module.concat(protocol, &1))
+  rescue
+    _ -> []
+  end
+
+  @doc """
   Directories holding the compiled beams of the current Mix project.
 
   With `deps: true` the dependencies' `ebin` directories come along,

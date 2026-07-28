@@ -9,14 +9,21 @@ defmodule Pure.Analyzer do
 
   1. **Scan.** Every function body is walked for the things that can
      possibly have an effect: calls, fun references, `!` and `receive`.
-     Calls keep a *shape* for each argument (`:fun`, `{:param, i}` or
-     `:opaque`) so higher-order arguments can be resolved later.
+     Calls keep a *shape* for each argument (`:fun`, `{:param, i}`,
+     `{:literal, type}` or `:opaque`) so higher-order arguments and
+     dispatch targets can be resolved later.
   2. **Resolve.** Each call becomes either a dependency on another
      analysed function, an effect from `Pure.Knowledge`, or an
      `:unknown` effect. Applying an argument makes the function
      higher-order at that position rather than impure; applying anything
      else the analyser cannot see is a `:higher_order` effect.
-  3. **Fixpoint.** Effects flow backwards along the call graph until
+  3. **Dispatch.** A call that picks its target at runtime depends on
+     every implementation it can reach, so all of them have to be pure
+     for it to be pure. Protocols and behaviours are the same thing
+     here: a module declaring a `-callback` is dispatched to its
+     implementations. A literal at the call site narrows that to the one
+     implementation it will actually reach.
+  4. **Fixpoint.** Effects flow backwards along the call graph until
      nothing changes. Recursion needs no special case: the least
      fixpoint starts from "no effects" and only grows.
 
@@ -76,8 +83,10 @@ defmodule Pure.Analyzer do
       |> Map.new()
 
     analyzed = MapSet.new(Map.keys(functions))
-    hofs = settle_hofs(functions, analyzed, known)
-    resolved = resolve_all(functions, analyzed, hofs, known)
+    dispatch = dispatch_index(forms_by_module, analyzed)
+    context = %{analyzed: analyzed, known: known, dispatch: dispatch}
+    hofs = settle_hofs(functions, context)
+    resolved = resolve_all(functions, context, hofs)
     effects = settle_effects(resolved)
 
     Map.new(functions, fn {mfa, scan} ->
@@ -198,7 +207,63 @@ defmodule Pure.Analyzer do
   end
 
   defp scan_clause({:clause, _anno, patterns, _guards, body}, scan) do
-    walk(body, %{params: param_index(patterns), funs: bound_funs(body)}, scan)
+    context = %{
+      params: param_index(patterns),
+      funs: bound_funs(body),
+      types: bound_types(body)
+    }
+
+    walk(body, context, scan)
+  end
+
+  # `to_string(%Quiet{})` inlines to `case %Quiet{} do x when is_binary(x)
+  # -> x; x -> String.Chars.to_string(x) end`, so the term whose type
+  # decides the dispatch reaches the call as a variable. Following that
+  # one binding is what keeps a dispatch on a known struct from being
+  # answered with a join over every implementation.
+  defp bound_types(body), do: collect_types(body, %{})
+
+  defp collect_types({:match, _anno, {:var, _, name}, value}, types) do
+    types |> remember_type(name, value) |> then(&collect_types(value, &1))
+  end
+
+  defp collect_types({:case, _anno, subject, clauses}, types) do
+    clauses
+    |> Enum.reduce(types, fn
+      {:clause, _anno, [{:var, _, name}], _guards, _body}, types ->
+        remember_type(types, name, subject)
+
+      _clause, types ->
+        types
+    end)
+    |> then(&collect_types([subject, clauses], &1))
+  end
+
+  defp collect_types(list, types) when is_list(list) do
+    Enum.reduce(list, types, &collect_types/2)
+  end
+
+  defp collect_types(tuple, types) when is_tuple(tuple) do
+    tuple |> Tuple.to_list() |> collect_types(types)
+  end
+
+  defp collect_types(_leaf, types), do: types
+
+  # A name bound to two different types somewhere in the same clause is
+  # not worth guessing about.
+  defp remember_type(types, name, value) do
+    case literal_type(value) do
+      nil -> types
+      type -> remember(types, name, type)
+    end
+  end
+
+  defp remember(types, name, type) do
+    case Map.fetch(types, name) do
+      :error -> Map.put(types, name, type)
+      {:ok, ^type} -> types
+      {:ok, _other} -> Map.put(types, name, :conflict)
+    end
   end
 
   # `with/else`, `try` and comprehensions compile to a fun bound to a
@@ -266,6 +331,15 @@ defmodule Pure.Analyzer do
     scan
     |> add_call({m, f, length(args)}, args, params)
     |> deeper(args, params)
+  end
+
+  # `calendar.date_to_string(y, m, d)` names no module, but the function
+  # it names is a callback of the `Calendar` behaviour, so the reachable
+  # implementations are known even though the module is not.
+  defp walk({:call, _anno, {:remote, _, module, {:atom, _, function}}, args}, params, scan) do
+    scan
+    |> add_callback_call({function, length(args)}, args, params)
+    |> deeper([module | args], params)
   end
 
   defp walk({:call, _anno, {:remote, _, m, f}, args}, params, scan) do
@@ -359,6 +433,10 @@ defmodule Pure.Analyzer do
     %{scan | calls: [{:call, {:local, f, a}, shapes(args, params)} | scan.calls]}
   end
 
+  defp add_callback_call(scan, {f, a}, args, params) do
+    %{scan | calls: [{:call, {:callback, f, a}, shapes(args, params)} | scan.calls]}
+  end
+
   defp add_reference(scan, target) do
     %{scan | calls: [{:reference, target, []} | scan.calls]}
   end
@@ -367,18 +445,127 @@ defmodule Pure.Analyzer do
 
   defp shape({:fun, _, _}, _context), do: :fun
   defp shape({:named_fun, _, _, _}, _context), do: :fun
-  defp shape({:var, _, name}, context), do: classify_variable(name, context)
 
-  # Several higher-order functions take a non-fun in the same position,
-  # such as `Enum.with_index(list, 1)`. A term that cannot be a fun is
-  # never applied as one.
-  defp shape({literal, _, _}, _context)
-       when literal in [:integer, :float, :atom, :char, :string, :bin, :cons, :tuple, :map],
-       do: :literal
+  defp shape({:var, _, name}, context) do
+    case classify_variable(name, context) do
+      :opaque -> variable_type(name, context)
+      resolved -> resolved
+    end
+  end
 
-  defp shape({:cons, _, _, _}, _context), do: :literal
-  defp shape({nil, _}, _context), do: :literal
-  defp shape(_other, _context), do: :opaque
+  defp shape(expression, _context) do
+    case literal_type(expression) do
+      nil -> :opaque
+      type -> {:literal, type}
+    end
+  end
+
+  defp variable_type(name, context) do
+    case Map.get(context.types, name) do
+      nil -> :opaque
+      :conflict -> :opaque
+      type -> {:literal, type}
+    end
+  end
+
+  # Literals matter twice over: a term that cannot be a fun is never
+  # applied as one, and its type says which protocol implementation a
+  # dispatch on it will reach.
+  defp literal_type({:map, _, assocs}), do: struct_or_map(assocs)
+  defp literal_type({:map, _, base, assocs}), do: struct_or_map(assocs ++ [base])
+  defp literal_type({:integer, _, _}), do: Integer
+  defp literal_type({:float, _, _}), do: Float
+  defp literal_type({:atom, _, _}), do: Atom
+  defp literal_type({:char, _, _}), do: Integer
+  defp literal_type({:string, _, _}), do: List
+  defp literal_type({:bin, _, _}), do: BitString
+  defp literal_type({:tuple, _, _}), do: Tuple
+  defp literal_type({:cons, _, _, _}), do: List
+  defp literal_type({nil, _}), do: List
+  defp literal_type(_other), do: nil
+
+  defp struct_or_map(assocs) do
+    Enum.find_value(assocs, Map, fn
+      {_assoc, _anno, {:atom, _, :__struct__}, {:atom, _, struct}} -> struct
+      {:map, _, nested} -> struct_or_map(nested)
+      _other -> false
+    end)
+  end
+
+  ## Dispatch ---------------------------------------------------------------
+
+  # A protocol is a behaviour whose implementations are separate modules:
+  # `Enumerable` declares `-callback reduce/3` and `Enumerable.List`
+  # declares `-behaviour(Enumerable)`. So one rule covers both - a call
+  # to a module that declares the callback is a dispatch, and the answer
+  # is the join over the implementations that are known here.
+  #
+  # Resolving to the implementations also has to *replace* the call to
+  # the protocol module itself, whose body loads the implementation and
+  # would drag `:code_loading` into every caller.
+  defp dispatch_index(forms_by_module, analyzed) do
+    implementers =
+      Enum.reduce(forms_by_module, %{}, fn {module, forms}, acc ->
+        Enum.reduce(behaviours(forms), acc, fn behaviour, acc ->
+          Map.update(acc, behaviour, [module], &[module | &1])
+        end)
+      end)
+
+    targets =
+      for {module, forms} <- forms_by_module,
+          {function, arity} <- callbacks(forms),
+          into: %{} do
+        implementations =
+          implementers
+          |> Map.get(module, [])
+          |> Enum.map(&{&1, function, arity})
+          |> Enum.filter(&MapSet.member?(analyzed, &1))
+          |> Enum.sort()
+
+        {{module, function, arity}, implementations}
+      end
+
+    %{
+      targets: targets,
+      callbacks: by_callback(targets),
+      protocols: protocols(forms_by_module)
+    }
+  end
+
+  # The same implementations, reachable by callback name alone, for a
+  # dispatch that names the function but not the module. If two
+  # behaviours happen to declare the same callback, both sets join.
+  defp by_callback(targets) do
+    targets
+    |> Enum.reduce(%{}, fn {{_module, function, arity}, implementations}, acc ->
+      Map.update(acc, {function, arity}, implementations, &(implementations ++ &1))
+    end)
+    |> Map.new(fn {callback, implementations} ->
+      {callback, implementations |> Enum.uniq() |> Enum.sort()}
+    end)
+  end
+
+  # An Elixir protocol picks its implementation from the first argument,
+  # so a literal there settles the dispatch on its own. A plain
+  # behaviour has no such argument and always joins.
+  defp protocols(forms_by_module) do
+    for {module, forms} <- forms_by_module,
+        Enum.any?(forms, &match?({:function, _, :__protocol__, 1, _}, &1)),
+        into: MapSet.new(),
+        do: module
+  end
+
+  defp behaviours(forms) do
+    for {:attribute, _anno, name, behaviour} <- forms,
+        name in [:behaviour, :behavior],
+        is_atom(behaviour),
+        do: behaviour
+  end
+
+  defp callbacks(forms) do
+    for {:attribute, _anno, :callback, {{function, arity}, _spec}} <- forms,
+        do: {function, arity}
+  end
 
   ## Resolving --------------------------------------------------------------
 
@@ -386,50 +573,67 @@ defmodule Pure.Analyzer do
   # higher-order function is higher-order too, which is only visible once
   # the callee is known to be higher-order. Iterating to a fixpoint costs
   # two passes in practice and keeps `wrap(list, fun)` honest.
-  defp settle_hofs(functions, analyzed, known) do
+  defp settle_hofs(functions, context) do
     initial = Map.new(functions, fn {mfa, scan} -> {mfa, scan.hof_params} end)
 
     Enum.reduce_while(1..8, initial, fn _round, hofs ->
       next =
         functions
-        |> resolve_all(analyzed, hofs, known)
+        |> resolve_all(context, hofs)
         |> Map.new(fn {mfa, function} -> {mfa, function.hof_params} end)
 
       if next == hofs, do: {:halt, hofs}, else: {:cont, next}
     end)
   end
 
-  defp resolve_all(functions, analyzed, hofs, known) do
+  defp resolve_all(functions, context, hofs) do
     Map.new(functions, fn {mfa, scan} ->
-      {mfa, resolve_function(mfa, scan, analyzed, hofs, known)}
+      {mfa, resolve_function(mfa, scan, context, hofs)}
     end)
   end
 
-  defp resolve_function({module, _, _}, scan, analyzed, hofs, known) do
+  defp resolve_function({module, _, _}, scan, context, hofs) do
     initial = %{effects: scan.effects, deps: MapSet.new(), hof_params: scan.hof_params}
 
-    Enum.reduce(scan.calls, initial, fn {kind, target, shapes}, acc ->
-      mfa = target_mfa(target, module, scan.imports, analyzed)
+    Enum.reduce(scan.calls, initial, fn
+      {_kind, {:callback, function, arity}, _shapes}, acc ->
+        case Map.get(context.dispatch.callbacks, {function, arity}, []) do
+          [] -> %{acc | effects: MapSet.put(acc.effects, {:dynamic_call, nil, nil})}
+          targets -> Map.update!(acc, :deps, &Enum.into(targets, &1))
+        end
 
-      case classify(mfa, analyzed, known) do
-        :pure ->
-          acc
-
-        {:impure, category} ->
-          %{acc | effects: MapSet.put(acc.effects, {category, mfa, nil})}
-
-        {:hof, positions} ->
-          check_hof_args(acc, kind, positions, shapes, mfa)
-
-        :analyzed ->
-          acc
-          |> Map.update!(:deps, &MapSet.put(&1, mfa))
-          |> check_hof_args(kind, Map.get(hofs, mfa, []), shapes, mfa)
-
-        :unknown ->
-          %{acc | effects: MapSet.put(acc.effects, {:unknown, mfa, nil})}
-      end
+      {kind, target, shapes}, acc ->
+        resolve_call(acc, kind, target, shapes, module, scan.imports, context, hofs)
     end)
+  end
+
+  defp resolve_call(acc, kind, target, shapes, module, imports, context, hofs) do
+    mfa = target_mfa(target, module, imports, context.analyzed)
+
+    case classify(mfa, context) do
+      :pure ->
+        acc
+
+      {:impure, category} ->
+        %{acc | effects: MapSet.put(acc.effects, {category, mfa, nil})}
+
+      {:hof, positions} ->
+        check_hof_args(acc, kind, positions, shapes, mfa)
+
+      {:dispatch, targets} ->
+        case narrow(targets, mfa, shapes, context) do
+          [] -> %{acc | effects: MapSet.put(acc.effects, {:unknown, mfa, nil})}
+          targets -> Map.update!(acc, :deps, &Enum.into(targets, &1))
+        end
+
+      :analyzed ->
+        acc
+        |> Map.update!(:deps, &MapSet.put(&1, mfa))
+        |> check_hof_args(kind, Map.get(hofs, mfa, []), shapes, mfa)
+
+      :unknown ->
+        %{acc | effects: MapSet.put(acc.effects, {:unknown, mfa, nil})}
+    end
   end
 
   defp target_mfa({:remote, m, f, a}, _module, _imports, _analyzed), do: {m, f, a}
@@ -443,13 +647,31 @@ defmodule Pure.Analyzer do
     end
   end
 
-  defp classify({m, f, a} = mfa, analyzed, known) do
-    with :error <- Map.fetch(known, mfa),
-         :unknown <- Knowledge.lookup(m, f, a) do
-      if MapSet.member?(analyzed, mfa), do: :analyzed, else: :unknown
+  defp classify({m, f, a} = mfa, context) do
+    with :error <- Map.fetch(context.known, mfa),
+         :unknown <- Knowledge.lookup(m, f, a),
+         :error <- Map.fetch(context.dispatch.targets, mfa) |> wrap_dispatch() do
+      if MapSet.member?(context.analyzed, mfa), do: :analyzed, else: :unknown
     else
       {:ok, answer} -> answer
       answer -> answer
+    end
+  end
+
+  defp wrap_dispatch({:ok, targets}), do: {:ok, {:dispatch, targets}}
+  defp wrap_dispatch(:error), do: :error
+
+  # `for x <- xs, into: %{}` can only reach `Collectable.Map`, so joining
+  # over every collectable - `File.Stream` among them - would report it
+  # as writing to disk.
+  defp narrow(targets, {module, function, arity}, shapes, context) do
+    with true <- MapSet.member?(context.dispatch.protocols, module),
+         [{:literal, type} | _] <- shapes,
+         implementation = {Module.concat(module, type), function, arity},
+         true <- MapSet.member?(context.analyzed, implementation) do
+      [implementation]
+    else
+      _ -> targets
     end
   end
 
@@ -461,7 +683,7 @@ defmodule Pure.Analyzer do
     Enum.reduce(positions, acc, fn position, acc ->
       case Enum.at(shapes, position - 1) do
         :fun -> acc
-        :literal -> acc
+        {:literal, _type} -> acc
         {:param, i} -> %{acc | hof_params: MapSet.put(acc.hof_params, i)}
         _opaque_or_missing -> %{acc | effects: MapSet.put(acc.effects, {:higher_order, mfa, nil})}
       end

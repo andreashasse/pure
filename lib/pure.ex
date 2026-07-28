@@ -10,6 +10,15 @@ defmodule Pure do
 
       Pure.analyze(modules: [MyApp.Core])
 
+  ## Dispatch
+
+  A call that picks its target at runtime is only as pure as the
+  implementations it can reach, so all of them have to be pure for the
+  dispatch to be pure. Protocols and behaviours go through one rule: a
+  call to a module that declares the callback joins over its
+  implementations, and a literal at the call site narrows that to the
+  one implementation it will reach.
+
   ## Verdicts
 
     * `:pure`
@@ -40,8 +49,11 @@ defmodule Pure do
 
     * Dynamic dispatch. `apply/3` on computed values is `:unknown`, as
       is a fun stored in a data structure and applied later.
-    * Protocol dispatch is assumed pure, so `Enumerable`, `Collectable`
-      and `Inspect` implementations are taken on trust.
+    * A dispatch joins over the implementations that are part of the
+      analysis. One that was never compiled into the project cannot be
+      accounted for.
+    * `Kernel.inspect/1` is trusted rather than dispatched through
+      `Inspect`.
     * Creating a fun counts as calling it: `fn -> IO.puts("hi") end`
       makes the enclosing function impure even if it is never applied.
     * The knowledge base is hand-maintained. It covers OTP and Elixir's
@@ -79,7 +91,12 @@ defmodule Pure do
   @spec analyze(keyword()) :: analysis()
   def analyze(opts \\ []) do
     targets = Keyword.get(opts, :modules, []) ++ Keyword.get(opts, :paths, [])
-    {forms, skipped} = Beam.load(targets)
+
+    {forms, skipped} =
+      targets
+      |> Beam.load()
+      |> Beam.load_implementations()
+
     %{results: Analyzer.analyze(forms, Keyword.take(opts, [:known])), skipped: skipped}
   end
 

@@ -49,6 +49,10 @@ defmodule Pure.Knowledge do
 
   @type answer :: :pure | {:impure, category()} | {:hof, [pos_integer()]} | :unknown
 
+  # Protocols are deliberately absent: a dispatch is only as pure as the
+  # implementations it can reach, which the analyser works out from the
+  # implementations themselves.
+  #
   # Modules where every function is pure unless overridden below.
   @pure_modules MapSet.new([
                   # Erlang
@@ -89,9 +93,6 @@ defmodule Pure.Knowledge do
                   Bitwise,
                   Calendar,
                   Calendar.ISO,
-                  Collectable,
-                  Enumerable,
-                  Inspect,
                   Inspect.Algebra,
                   Inspect.Opts,
                   # Returns escape sequences, writes nothing.
@@ -110,7 +111,6 @@ defmodule Pure.Knowledge do
                   Kernel,
                   Keyword,
                   List,
-                  List.Chars,
                   Map,
                   MapSet,
                   NaiveDateTime,
@@ -119,7 +119,6 @@ defmodule Pure.Knowledge do
                   Regex,
                   Stream,
                   String,
-                  String.Chars,
                   Time,
                   Tuple,
                   URI,
@@ -204,6 +203,7 @@ defmodule Pure.Knowledge do
     Node => :network,
     Port => :port,
     Process => :process,
+    Protocol => :code_loading,
     Registry => :process,
     StringIO => :io,
     Supervisor => :process,

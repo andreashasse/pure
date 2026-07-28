@@ -33,7 +33,11 @@ defmodule Pure.Sample do
 
   def mutually_recursive_b(n), do: mutually_recursive_a(n)
 
-  def raises(x), do: raise(ArgumentError, "no #{x}")
+  def raises(_x), do: raise(ArgumentError, "no")
+
+  def interpolates(x), do: "value: #{x}"
+
+  def interpolates_integer, do: "value: #{1}"
 
   def structs(list), do: Map.new(list, fn {k, v} -> {k, v} end)
 
@@ -96,6 +100,32 @@ defmodule Pure.Sample do
   def bound_impure_fun(list) do
     log = fn x -> IO.puts(x) end
     Enum.each(list, log)
+  end
+
+  def with_else(map) do
+    with {:ok, value} <- Map.fetch(map, :key) do
+      value
+    else
+      :error -> :missing
+    end
+  end
+
+  def with_else_impure(map) do
+    with {:ok, value} <- Map.fetch(map, :key) do
+      value
+    else
+      :error -> IO.puts("missing")
+    end
+  end
+
+  def then_pipe(x), do: then(x, fn value -> value + 1 end)
+
+  def for_into(list), do: for(x <- list, into: %{}, do: {x, x})
+
+  def try_rescue(fun) do
+    fun.()
+  rescue
+    error -> Exception.message(error)
   end
 
   def receive_after do

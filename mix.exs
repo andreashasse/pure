@@ -10,7 +10,11 @@ defmodule Pure.MixProject do
       erlc_paths: erlc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      test_coverage: [ignore_modules: [Pure.Sample, :pure_sample_erl]],
+      # Fixtures are read as compiled code, never run, so coverage of
+      # them means nothing.
+      test_coverage: [
+        ignore_modules: [~r/^(Elixir\.)?Pure\.Sample/, ~r/Pure\.Sample/, :pure_sample_erl]
+      ],
       description: "Static purity analysis for BEAM functions",
       package: package(),
       docs: [main: "readme", extras: ["README.md"]]

@@ -156,6 +156,46 @@ defmodule Pure.AnalyzerTest do
     end
   end
 
+  # Each of these pins down a shape the Elixir compiler emits. They are
+  # the cases that made the analyser report unknown until it learned to
+  # see through them, and a future compiler release could move them.
+  describe "code the compiler rewrites" do
+    test "with/else becomes a fun bound to a variable and applied", context do
+      assert verdict(context, :with_else, 1) == :pure
+    end
+
+    test "an effect in a with/else branch is still found", context do
+      assert reasons(context, :with_else_impure, 1) == [{:io, {IO, :puts, 1}}]
+    end
+
+    test "then/2 is inlined into a direct application of a literal fun", context do
+      assert verdict(context, :then_pipe, 1) == :pure
+    end
+
+    test "for/into applies a collector fun from Collectable.into/1", context do
+      assert verdict(context, :for_into, 1) == :pure
+    end
+
+    test "try/rescue applies the rescued clauses through a fun", context do
+      assert verdict(context, :try_rescue, 1) == {:conditional, [1]}
+    end
+
+    test "map.key raises through an elixir runtime helper, not an effect", context do
+      assert verdict(context, :structs, 1) == :pure
+    end
+
+    test "string interpolation is a String.Chars dispatch", context do
+      # This project defines an impure implementation of String.Chars
+      # (Pure.Sample.Loud), and interpolating an unknown term can reach
+      # any implementation, so it can reach that one.
+      assert {:io, {IO, :puts, 1}} in reasons(context, :interpolates, 1)
+    end
+
+    test "interpolating a literal narrows to that one implementation", context do
+      assert verdict(context, :interpolates_integer, 0) == :pure
+    end
+  end
+
   describe "when the trail is lost" do
     test "a dynamic apply is unknown, not impure", context do
       assert tag(context, :dynamic, 2) == :unknown
