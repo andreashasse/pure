@@ -138,6 +138,24 @@ defmodule Pure.AnalyzerTest do
     end
   end
 
+  describe "resolving funs" do
+    test "a fun bound to a variable and passed on", context do
+      assert verdict(context, :bound_fun, 1) == :pure
+    end
+
+    test "an impure fun bound to a variable", context do
+      assert reasons(context, :bound_impure_fun, 1) == [{:io, {IO, :puts, 1}}]
+    end
+
+    test "two higher-order positions at once", context do
+      assert verdict(context, :two_position_hof, 3) == {:conditional, [2, 3]}
+    end
+
+    test "a non-fun in a higher-order position is not an unresolved fun", context do
+      assert verdict(context, :literal_at_hof_position, 1) == :pure
+    end
+  end
+
   describe "when the trail is lost" do
     test "a dynamic apply is unknown, not impure", context do
       assert tag(context, :dynamic, 2) == :unknown
@@ -146,6 +164,39 @@ defmodule Pure.AnalyzerTest do
 
     test "an unresolvable fun is unknown", context do
       assert tag(context, :unresolvable_fun, 1) == :unknown
+    end
+
+    test "a call on a module held in a variable is unknown", context do
+      assert reasons(context, :dynamic_module, 1) == [{:dynamic_call, nil}]
+    end
+  end
+
+  describe "receive" do
+    test "with an after clause", context do
+      assert reasons(context, :receive_after, 0) == [{:message_receive, nil}]
+    end
+  end
+
+  describe "explain/1" do
+    test "several higher-order positions read as a list" do
+      assert Pure.Analyzer.explain({:conditional, [2, 3]}) ==
+               "pure if the funs given as argument 2 and 3 are pure"
+    end
+
+    test "a long list of reasons is cut short" do
+      reasons = for n <- 1..6, do: {:io, {IO, :puts, n}, nil}
+
+      explanation = Pure.Analyzer.explain({:impure, reasons})
+
+      assert explanation =~ "(and 3 more)"
+      refute explanation =~ "IO.puts/4"
+    end
+
+    test "an effect reached through a callee names both" do
+      reason = {:io, {IO, :puts, 1}, {App, :log, 1}}
+
+      assert Pure.Analyzer.explain({:impure, [reason]}) ==
+               "impure: performs I/O (IO.puts/1) via App.log/1"
     end
   end
 

@@ -77,6 +77,11 @@ defmodule Pure.ErlangTest do
              verdict(context, :dynamic, 2)
   end
 
+  test "an -import turns into a call to the imported module" do
+    analysis = Pure.analyze(modules: [:pure_sample_erl])
+    assert Pure.verdict(analysis, {:pure_sample_erl, :imported, 1}) == :pure
+  end
+
   test "the -pure_annotated attribute is read", %{analysis: analysis} do
     assert %{annotated: true} = analysis.results[{@module, :add, 2}]
     assert %{annotated: false} = analysis.results[{@module, :hof, 2}]

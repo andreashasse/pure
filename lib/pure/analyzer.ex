@@ -144,6 +144,7 @@ defmodule Pure.Analyzer do
   defp scan_module(module, forms) do
     annotated = annotations(forms)
     exported = exports(forms)
+    imported = imports(forms)
 
     for {:function, _anno, name, arity, clauses} <- forms do
       scan = Enum.reduce(clauses, empty_scan(), &scan_clause/2)
@@ -152,9 +153,20 @@ defmodule Pure.Analyzer do
        %{
          scan
          | annotated: MapSet.member?(annotated, {name, arity}),
-           exported: MapSet.member?(exported, {name, arity})
+           exported: MapSet.member?(exported, {name, arity}),
+           imports: imported
        }}
     end
+  end
+
+  # An Erlang `-import(lists, [reverse/1])` turns `reverse(L)` into a
+  # local call in the abstract code even though it lands in another
+  # module.
+  defp imports(forms) do
+    for {:attribute, _anno, :import, {module, functions}} <- forms,
+        {function, arity} <- functions,
+        into: %{},
+        do: {{function, arity}, module}
   end
 
   defp exports(forms) do
@@ -180,7 +192,8 @@ defmodule Pure.Analyzer do
       calls: [],
       hof_params: MapSet.new(),
       annotated: false,
-      exported: false
+      exported: false,
+      imports: %{}
     }
   end
 
@@ -396,7 +409,7 @@ defmodule Pure.Analyzer do
     initial = %{effects: scan.effects, deps: MapSet.new(), hof_params: scan.hof_params}
 
     Enum.reduce(scan.calls, initial, fn {kind, target, shapes}, acc ->
-      mfa = target_mfa(target, module, analyzed)
+      mfa = target_mfa(target, module, scan.imports, analyzed)
 
       case classify(mfa, analyzed, known) do
         :pure ->
@@ -419,11 +432,12 @@ defmodule Pure.Analyzer do
     end)
   end
 
-  defp target_mfa({:remote, m, f, a}, _module, _analyzed), do: {m, f, a}
+  defp target_mfa({:remote, m, f, a}, _module, _imports, _analyzed), do: {m, f, a}
 
-  defp target_mfa({:local, f, a}, module, analyzed) do
+  defp target_mfa({:local, f, a}, module, imports, analyzed) do
     cond do
       MapSet.member?(analyzed, {module, f, a}) -> {module, f, a}
+      Map.has_key?(imports, {f, a}) -> {Map.fetch!(imports, {f, a}), f, a}
       :erl_internal.bif(f, a) -> {:erlang, f, a}
       true -> {module, f, a}
     end

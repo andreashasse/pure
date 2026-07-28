@@ -35,9 +35,47 @@ defmodule Pure.KnowledgeTest do
     assert Knowledge.lookup(File, :exception, 1) == {:impure, :file}
   end
 
-  test "every effect category has a description" do
-    for {_mfa, {:impure, category}} <- [{nil, {:impure, :io}}] do
+  @categories [
+    :io,
+    :file,
+    :network,
+    :system,
+    :time,
+    :random,
+    :process,
+    :process_dictionary,
+    :message,
+    :message_receive,
+    :ets,
+    :persistent_term,
+    :mutable_state,
+    :code_loading,
+    :port,
+    :tracing,
+    :dynamic_call,
+    :higher_order,
+    :unknown
+  ]
+
+  test "every effect category reads as a sentence" do
+    for category <- @categories do
       assert is_binary(Knowledge.describe(category))
     end
+  end
+
+  test "a native implementation stub is not mistaken for a pure body" do
+    assert Knowledge.lookup(:erlang, :nif_error, 1) == {:impure, :unknown}
+  end
+
+  test "higher_order_functions/0 exposes the argument positions" do
+    hofs = Knowledge.higher_order_functions()
+
+    assert hofs[{Enum, :map, 2}] == [2]
+    assert hofs[{:lists, :foldl, 3}] == [1]
+  end
+
+  test "the elixir runtime helpers behind map access are pure" do
+    assert Knowledge.lookup(:elixir_erl_pass, :no_parens_remote, 2) == :pure
+    assert Knowledge.lookup(:elixir_erl_pass, :parens_map_field, 2) == :pure
   end
 end

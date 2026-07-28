@@ -60,6 +60,7 @@ defmodule Pure.Knowledge do
                   :erl_anno,
                   :erl_internal,
                   :erl_parse,
+                  :erl_pp,
                   :erl_scan,
                   :filename,
                   :gb_sets,
@@ -71,12 +72,14 @@ defmodule Pure.Knowledge do
                   :math,
                   :orddict,
                   :ordsets,
+                  :otp_internal,
                   :proplists,
                   :queue,
                   :re,
                   :sets,
                   :string,
                   :unicode,
+                  :unicode_util,
                   :uri_string,
                   :erlang,
                   # Elixir
@@ -129,9 +132,10 @@ defmodule Pure.Knowledge do
     # Erlang
     :application => :system,
     :beam_lib => :file,
-    :code => :code_loading,
-    :counters => :mutable_state,
     :atomics => :mutable_state,
+    :code => :code_loading,
+    :compile => :file,
+    :counters => :mutable_state,
     :ct => :io,
     :dbg => :tracing,
     :dets => :file,
@@ -154,6 +158,7 @@ defmodule Pure.Knowledge do
     :gen_tcp => :network,
     :gen_udp => :network,
     :global => :network,
+    :init => :system,
     :httpc => :network,
     :inet => :network,
     :inets => :network,
@@ -307,9 +312,16 @@ defmodule Pure.Knowledge do
     # Reflection on the module's own metadata: deterministic, no effect.
     {:erlang, :get_module_info} => :pure,
 
-    # Compiled into ordinary Elixir code: `map.key` on a non-map raises
-    # through this helper, so it appears in perfectly pure functions.
+    # The marker in the body of a function whose real implementation is
+    # native. Reading such a body would report the function as pure, so
+    # anything reaching it is "cannot tell" instead.
+    {:erlang, :nif_error} => {:impure, :unknown},
+
+    # Compiled into ordinary Elixir code: `map.key` and `map.key()` on a
+    # non-map raise through these helpers, so they appear in perfectly
+    # pure functions.
     {:elixir_erl_pass, :no_parens_remote} => :pure,
+    {:elixir_erl_pass, :parens_map_field} => :pure,
 
     # --- pure modules with impure corners -------------------------------
     {:calendar, :local_time} => {:impure, :time},
@@ -359,7 +371,7 @@ defmodule Pure.Knowledge do
     {Path, :safe_relative_to} => {:impure, :file},
     {Stream, :interval} => {:impure, :time},
     {Stream, :timer} => {:impure, :time},
-    {Stream, :resource} => {:impure, :unknown},
+    {Stream, :resource, 3} => {:hof, [1, 2, 3]},
 
     # --- impure modules with pure corners -------------------------------
     {:code, :which} => {:impure, :code_loading},

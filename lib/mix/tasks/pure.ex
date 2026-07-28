@@ -4,6 +4,10 @@ defmodule Mix.Tasks.Pure do
   @moduledoc """
   Reports which functions in the project have no side effects.
 
+  Calls into dependencies are followed by default, so a function that
+  reaches an effect through a library is reported as impure rather than
+  unknown.
+
       mix pure                     # summary for every module in the project
       mix pure MyApp.Core          # every function in one module
       mix pure MyApp.Core.total/1  # one function, with the reasons
@@ -14,8 +18,8 @@ defmodule Mix.Tasks.Pure do
     * `--check` - exit non-zero if any function annotated `@pure true`
       is not pure. This is the CI mode.
     * `--all` - list pure functions too, not just the interesting ones.
-    * `--deps` - follow calls into dependencies instead of reporting
-      them as unknown. Slower, and much more precise.
+    * `--no-deps` - do not follow calls into dependencies. Faster, at
+      the cost of reporting every call into a library as unknown.
     * `--unknown` - list functions whose purity could not be determined.
     * `--private` - include private functions.
 
@@ -51,7 +55,7 @@ defmodule Mix.Tasks.Pure do
 
     analysis =
       Pure.analyze(
-        paths: Pure.Beam.build_dirs(deps: opts[:deps]),
+        paths: Pure.Beam.build_dirs(deps: Keyword.get(opts, :deps, true)),
         known: Keyword.get(config, :known, %{})
       )
 
@@ -82,7 +86,7 @@ defmodule Mix.Tasks.Pure do
   end
 
   defp report_module(module, functions, opts) do
-    Mix.shell().info("\n" <> IO.ANSI.bright() <> inspect(module) <> IO.ANSI.reset())
+    Mix.shell().info("\n" <> paint(inspect(module), IO.ANSI.bright()))
 
     functions
     |> Enum.sort_by(fn {{_, f, a}, _} -> {f, a} end)
@@ -205,7 +209,13 @@ defmodule Mix.Tasks.Pure do
         :unknown -> IO.ANSI.faint()
       end
 
-    color <> text <> IO.ANSI.reset()
+    paint(text, color)
+  end
+
+  # Piping the report into a file or a test should not litter it with
+  # escape sequences.
+  defp paint(text, color) do
+    if IO.ANSI.enabled?(), do: color <> text <> IO.ANSI.reset(), else: text
   end
 
   defp format({module, function, arity}), do: "#{inspect(module)}.#{function}/#{arity}"

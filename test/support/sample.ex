@@ -82,9 +82,35 @@ defmodule Pure.Sample do
 
   def hof_with_impure_fun(list), do: hof(list, &IO.puts/1)
 
+  def two_position_hof(list, chunk, after_fun) do
+    Enum.chunk_while(list, [], chunk, after_fun)
+  end
+
+  def literal_at_hof_position(list), do: Enum.with_index(list, 1)
+
+  def bound_fun(list) do
+    double = fn x -> x * 2 end
+    Enum.map(list, double)
+  end
+
+  def bound_impure_fun(list) do
+    log = fn x -> IO.puts(x) end
+    Enum.each(list, log)
+  end
+
+  def receive_after do
+    receive do
+      msg -> msg
+    after
+      100 -> :timeout
+    end
+  end
+
   ## Unknown
 
   def dynamic(module, fun), do: apply(module, fun, [])
+
+  def dynamic_module(module), do: module.run()
 
   def unresolvable_fun(map), do: map.fun.(1)
 end

@@ -36,8 +36,8 @@ defmodule Pure.Beam do
   Directories holding the compiled beams of the current Mix project.
 
   With `deps: true` the dependencies' `ebin` directories come along,
-  which is what you want when the analyser should follow calls into
-  libraries instead of reporting them as unknown.
+  which is what the `mix pure` task does by default: following calls
+  into libraries turns unknowns into real answers.
   """
   @spec build_dirs(keyword()) :: [Path.t()]
   def build_dirs(opts \\ []) do
@@ -77,9 +77,23 @@ defmodule Pure.Beam do
       path when is_list(path) -> {:ok, path}
       :preloaded -> {:error, :no_debug_info}
       :non_existing -> {:error, :not_found}
+      :cover_compiled -> covered(module)
       other -> {:error, other}
     end
   end
 
   defp locate(path) when is_binary(path), do: {:ok, String.to_charlist(path)}
+
+  # Under `mix test --cover` the loaded module has no file of its own,
+  # but the beam it was compiled from is still on disk. Called through
+  # apply/3 because :cover lives in :tools, which this library does not
+  # depend on.
+  defp covered(module) do
+    with true <- Code.ensure_loaded?(:cover),
+         {:file, path} <- apply(:cover, :is_compiled, [module]) do
+      {:ok, path}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
 end

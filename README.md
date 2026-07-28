@@ -15,7 +15,9 @@ Payments.Core
 
 It reads the abstract code out of compiled `.beam` files, so it works on
 both Elixir and Erlang, sees your code after macro expansion, and needs
-no annotations to say something useful.
+no annotations to say something useful. Calls into your dependencies are
+followed too, so an effect three libraries deep still comes back with
+the function that has it.
 
 ## Install
 
@@ -38,7 +40,7 @@ mix pure --check             # fail the build if a @pure function is not pure
 | --- | --- |
 | `--check` | Exit non-zero when a function annotated `@pure true` is not pure. The CI mode. |
 | `--all` | List pure functions too. |
-| `--deps` | Follow calls into dependencies instead of reporting them as unknown. |
+| `--no-deps` | Do not follow calls into dependencies. Faster, at the cost of reporting every call into a library as unknown. |
 | `--unknown` | List functions whose purity could not be determined. |
 | `--private` | Include private functions. |
 
@@ -143,6 +145,7 @@ lie, and it always wins over what the code appears to do.
 
 ```bash
 mix test
+mix test --cover
 mix pure --all   # it analyses itself
 ```
 
