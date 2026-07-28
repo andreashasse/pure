@@ -7,6 +7,7 @@ defmodule Pure.MixProject do
       version: "0.1.0",
       elixir: "~> 1.16",
       elixirc_paths: elixirc_paths(Mix.env()),
+      erlc_paths: erlc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description: "Static purity analysis for BEAM functions",
@@ -21,6 +22,9 @@ defmodule Pure.MixProject do
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp erlc_paths(:test), do: ["test/erlang"]
+  defp erlc_paths(_), do: []
 
   # Deliberately none: a build-time analysis tool everyone is expected to
   # add to their project should not drag anything in.

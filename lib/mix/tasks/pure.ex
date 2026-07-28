@@ -57,12 +57,12 @@ defmodule Mix.Tasks.Pure do
 
     warn_skipped(analysis.skipped)
 
-    results = interesting(analysis.results, opts, Enum.map(filters, &parse_filter/1))
-
     if opts[:check] do
       check(analysis)
     else
-      report(results, opts)
+      analysis.results
+      |> interesting(opts, Enum.map(filters, &parse_filter/1))
+      |> report(opts)
     end
   end
 

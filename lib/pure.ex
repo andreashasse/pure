@@ -35,6 +35,20 @@ defmodule Pure do
 
   `mix pure --check` then fails the build if `total/1` ever stops being
   pure. Erlang modules can use `-pure_annotated([{total, 1}]).`
+
+  ## What it cannot see
+
+    * Dynamic dispatch. `apply/3` on computed values is `:unknown`, as
+      is a fun stored in a data structure and applied later.
+    * Protocol dispatch is assumed pure, so `Enumerable`, `Collectable`
+      and `Inspect` implementations are taken on trust.
+    * Creating a fun counts as calling it: `fn -> IO.puts("hi") end`
+      makes the enclosing function impure even if it is never applied.
+    * The knowledge base is hand-maintained. It covers OTP and Elixir's
+      standard library; anything else is `:unknown` until told
+      otherwise through `:known`.
+    * Non-termination, allocation and atom table growth are not
+      effects here.
   """
 
   alias Pure.{Analyzer, Beam}
