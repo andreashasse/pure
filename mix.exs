@@ -7,8 +7,14 @@ defmodule Pure.MixProject do
       version: "0.1.0",
       elixir: "~> 1.16",
       elixirc_paths: elixirc_paths(Mix.env()),
+      erlc_paths: erlc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      # Fixtures are read as compiled code, never run, so coverage of
+      # them means nothing.
+      test_coverage: [
+        ignore_modules: [~r/^(Elixir\.)?Pure\.Sample/, ~r/Pure\.Sample/, :pure_sample_erl]
+      ],
       description: "Static purity analysis for BEAM functions",
       package: package(),
       docs: [main: "readme", extras: ["README.md"]]
@@ -22,11 +28,12 @@ defmodule Pure.MixProject do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
-  defp deps do
-    [
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
-    ]
-  end
+  defp erlc_paths(:test), do: ["test/erlang"]
+  defp erlc_paths(_), do: []
+
+  # Deliberately none: a build-time analysis tool everyone is expected to
+  # add to their project should not drag anything in.
+  defp deps, do: []
 
   defp package do
     [
