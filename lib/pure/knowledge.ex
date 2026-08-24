@@ -25,6 +25,8 @@ defmodule Pure.Knowledge do
   arguments at each call site.
   """
 
+  # Not annotated for the same reason `Pure.Annotation` is not: reading an
+  # `@pure except: [...]` calls `categories/0` at compile time.
   @typedoc "Why a function is impure."
   @type category ::
           :io
@@ -48,6 +50,57 @@ defmodule Pure.Knowledge do
           | :unknown
 
   @type answer :: :pure | {:impure, category()} | {:hof, [pos_integer()]} | :unknown
+
+  # The same list as the type above, as data. It is the vocabulary an
+  # `@pure except: [...]` annotation may name, so it is public API rather
+  # than an implementation detail.
+  @categories [
+    :io,
+    :file,
+    :network,
+    :system,
+    :time,
+    :random,
+    :process,
+    :process_dictionary,
+    :message,
+    :message_receive,
+    :ets,
+    :persistent_term,
+    :mutable_state,
+    :code_loading,
+    :port,
+    :tracing,
+    :dynamic_call,
+    :higher_order,
+    :unknown
+  ]
+
+  # Losing the trail is not the same as finding an effect: a dynamic apply
+  # or an unresolvable fun means "cannot tell", and saying so is more
+  # useful than a confident wrong answer in either direction.
+  @lost_trail [:unknown, :higher_order, :dynamic_call]
+
+  @doc """
+  Every effect class, in report order.
+
+      iex> :time in Pure.Knowledge.categories()
+      true
+  """
+  @spec categories() :: [category()]
+  def categories, do: @categories
+
+  @doc """
+  Whether a class means "the analyser could not tell" rather than "there is an effect".
+
+      iex> Pure.Knowledge.lost_trail?(:dynamic_call)
+      true
+
+      iex> Pure.Knowledge.lost_trail?(:io)
+      false
+  """
+  @spec lost_trail?(category()) :: boolean()
+  def lost_trail?(category), do: category in @lost_trail
 
   # Protocols are deliberately absent: a dispatch is only as pure as the
   # implementations it can reach, which the analyser works out from the

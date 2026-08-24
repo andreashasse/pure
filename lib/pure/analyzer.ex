@@ -32,7 +32,9 @@ defmodule Pure.Analyzer do
   third into either of the others makes the tool lie.
   """
 
-  alias Pure.Knowledge
+  use Pure
+
+  alias Pure.{Annotation, Knowledge}
 
   @typedoc """
   Why a function is not pure.
@@ -52,14 +54,16 @@ defmodule Pure.Analyzer do
           verdict: verdict(),
           effects: [reason()],
           hof_params: [pos_integer()],
-          annotated: boolean(),
+          annotation: Annotation.t() | nil,
           exported: boolean()
         }
 
-  # Losing the trail is not the same as finding an effect: a dynamic
-  # apply or an unresolvable fun means "cannot tell", and saying so is
-  # more useful than a confident wrong answer in either direction.
-  @lost_trail [:unknown, :higher_order, :dynamic_call]
+  # Compiler-generated functions that say nothing about the code as written.
+  @generated [{:module_info, 0}, {:module_info, 1}, {:__info__, 1}]
+
+  # Macros compile to `MACRO-name/arity`. They run at compile time, where
+  # purity is a different question, so they are left out of reports.
+  @macro_prefix "MACRO-"
 
   # Beyond this a one-line verdict stops being readable; the full list
   # stays in the result for callers that want it.
@@ -73,6 +77,7 @@ defmodule Pure.Analyzer do
     * `:known` - a `%{mfa => Pure.Knowledge.answer}` map that overrides
       the built-in knowledge base, for libraries it does not cover.
   """
+  @pure true
   @spec analyze(%{module() => [tuple()]}, keyword()) :: %{mfa() => result()}
   def analyze(forms_by_module, opts \\ []) do
     known = Keyword.get(opts, :known, %{})
@@ -98,7 +103,7 @@ defmodule Pure.Analyzer do
          verdict: verdict(reasons, hof_params),
          effects: reasons,
          hof_params: hof_params,
-         annotated: scan.annotated,
+         annotation: scan.annotation,
          exported: scan.exported
        }}
     end)
@@ -133,6 +138,22 @@ defmodule Pure.Analyzer do
       if rest == [], do: "", else: " (and #{length(rest)} more)"
   end
 
+  @doc """
+  Whether a function is compiler-generated or compile-time only.
+
+      iex> Pure.Analyzer.generated?({MyApp, :module_info, 0})
+      true
+
+      iex> Pure.Analyzer.generated?({MyApp, :total, 1})
+      false
+  """
+  @pure true
+  @spec generated?(mfa()) :: boolean()
+  def generated?({_module, function, arity}) do
+    {function, arity} in @generated or
+      String.starts_with?(Atom.to_string(function), @macro_prefix)
+  end
+
   defp explain_reason({category, mfa, via}) do
     [Knowledge.describe(category), format_mfa(mfa), format_via(via, mfa)]
     |> Enum.reject(&(&1 == ""))
@@ -152,21 +173,52 @@ defmodule Pure.Analyzer do
 
   defp scan_module(module, forms) do
     annotated = annotations(forms)
+    module_annotation = module_annotation(forms)
     exported = exports(forms)
     imported = imports(forms)
 
     for {:function, _anno, name, arity, clauses} <- forms do
       scan = Enum.reduce(clauses, empty_scan(), &scan_clause/2)
+      mfa = {module, name, arity}
+      public? = MapSet.member?(exported, {name, arity})
 
-      {{module, name, arity},
+      {mfa,
        %{
          scan
-         | annotated: MapSet.member?(annotated, {name, arity}),
-           exported: MapSet.member?(exported, {name, arity}),
+         | annotation:
+             annotation_for(
+               Map.get(annotated, {name, arity}),
+               module_annotation,
+               public? and not generated?(mfa)
+             ),
+           exported: public?,
            imports: imported
        }}
     end
   end
+
+  # A module-wide annotation covers the module's public interface: every
+  # function someone else can call, and none of the ones the compiler
+  # wrote. A function of its own may narrow what the module waives, and
+  # anything it adds on top is recorded as a problem rather than granted.
+  defp annotation_for(nil, nil, _covered?), do: nil
+  defp annotation_for(nil, _module_annotation, false), do: nil
+
+  defp annotation_for(nil, module_annotation, true) do
+    Annotation.build(module_annotation, :module)
+  end
+
+  defp annotation_for(parsed, nil, _covered?), do: Annotation.build(parsed, :function)
+
+  defp annotation_for(parsed, module_annotation, _covered?) do
+    Annotation.build(parsed, :function, within(module_annotation))
+  end
+
+  # A module annotation that could not be read constrains nothing; it is
+  # reported on its own instead of making every waiver below it look like
+  # a widening.
+  defp within({:ok, except}), do: except
+  defp within({:error, _problem}), do: nil
 
   # An Erlang `-import(lists, [reverse/1])` turns `reverse(L)` into a
   # local call in the abstract code even though it lands in another
@@ -188,19 +240,45 @@ defmodule Pure.Analyzer do
   defp annotations(forms) do
     for {:attribute, _anno, name, value} <- forms,
         name in [:pure, :pure_annotated],
-        {function, arity} <- List.wrap(value),
-        is_atom(function) and is_integer(arity),
-        into: MapSet.new() do
-      {function, arity}
+        entry <- List.wrap(value),
+        parsed = annotation_entry(entry),
+        parsed != nil,
+        into: %{},
+        do: parsed
+  end
+
+  defp annotation_entry({function, arity}) when is_atom(function) and is_integer(arity) do
+    {{function, arity}, {:ok, []}}
+  end
+
+  defp annotation_entry({function, arity, except})
+       when is_atom(function) and is_integer(arity) do
+    {{function, arity}, Annotation.parse(except: except)}
+  end
+
+  defp annotation_entry(_other), do: nil
+
+  defp module_annotation(forms) do
+    declared = for {:attribute, _anno, :pure_module, value} <- forms, do: value
+
+    case declared do
+      [] -> nil
+      [value | _rest] -> value |> module_value() |> Annotation.parse()
     end
   end
+
+  # Elixir persists a module attribute wrapped in a list of its values;
+  # an Erlang -pure_module writes the term exactly as given.
+  defp module_value([true]), do: true
+  defp module_value([[_ | _] = keyword]), do: keyword
+  defp module_value(value), do: value
 
   defp empty_scan do
     %{
       effects: MapSet.new(),
       calls: [],
       hof_params: MapSet.new(),
-      annotated: false,
+      annotation: nil,
       exported: false,
       imports: %{}
     }
@@ -744,7 +822,7 @@ defmodule Pure.Analyzer do
       via != nil and MapSet.member?(direct, {category, origin})
     end)
     |> Enum.sort_by(fn {category, origin, _via} ->
-      {category in @lost_trail, category, inspect(origin)}
+      {Knowledge.lost_trail?(category), category, inspect(origin)}
     end)
   end
 
@@ -752,7 +830,7 @@ defmodule Pure.Analyzer do
   defp verdict([], hof_params), do: {:conditional, hof_params}
 
   defp verdict(reasons, _hof_params) do
-    if Enum.all?(reasons, fn {category, _, _} -> category in @lost_trail end) do
+    if Enum.all?(reasons, fn {category, _, _} -> Knowledge.lost_trail?(category) end) do
       {:unknown, reasons}
     else
       {:impure, reasons}

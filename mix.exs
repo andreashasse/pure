@@ -13,7 +13,12 @@ defmodule Pure.MixProject do
       # Fixtures are read as compiled code, never run, so coverage of
       # them means nothing.
       test_coverage: [
-        ignore_modules: [~r/^(Elixir\.)?Pure\.Sample/, ~r/Pure\.Sample/, :pure_sample_erl]
+        ignore_modules: [
+          ~r/^(Elixir\.)?Pure\.Sample/,
+          ~r/Pure\.Sample/,
+          :pure_sample_erl,
+          :pure_module_erl
+        ]
       ],
       description: "Static purity analysis for BEAM functions",
       package: package(),
@@ -31,9 +36,13 @@ defmodule Pure.MixProject do
   defp erlc_paths(:test), do: ["test/erlang"]
   defp erlc_paths(_), do: []
 
-  # Deliberately none: a build-time analysis tool everyone is expected to
-  # add to their project should not drag anything in.
-  defp deps, do: []
+  # Credo is optional on purpose: `Pure.Check.Purity` is only compiled
+  # when the project using this library has Credo of its own, so a
+  # build-time analysis tool everyone is expected to add to their project
+  # still drags nothing in.
+  defp deps do
+    [{:credo, "~> 1.7", optional: true, only: [:dev, :test], runtime: false}]
+  end
 
   defp package do
     [

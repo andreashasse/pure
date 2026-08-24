@@ -83,11 +83,35 @@ defmodule Pure.ErlangTest do
   end
 
   test "the -pure_annotated attribute is read", %{analysis: analysis} do
-    assert %{annotated: true} = analysis.results[{@module, :add, 2}]
-    assert %{annotated: false} = analysis.results[{@module, :hof, 2}]
+    assert %{annotation: %{except: [], scope: :function}} = analysis.results[{@module, :add, 2}]
+    assert %{annotation: nil} = analysis.results[{@module, :hof, 2}]
   end
 
   test "an annotated Erlang function that is not pure is a violation", %{analysis: analysis} do
     assert [{{@module, :annotated_impure, 1}, {:impure, _}}] = Pure.violations(analysis)
+  end
+
+  test "a waiver can be written in Erlang too", %{analysis: analysis} do
+    assert %{annotation: %{except: [:time], scope: :function}} =
+             analysis.results[{@module, :stamped, 1}]
+
+    assert {:impure, [{:time, _, _}]} = Pure.verdict(analysis, {@module, :stamped, 1})
+    refute List.keymember?(Pure.violations(analysis), {@module, :stamped, 1}, 0)
+  end
+
+  describe "-pure_module" do
+    setup do
+      %{analysis: Pure.analyze(modules: [:pure_module_erl])}
+    end
+
+    test "covers every exported function", %{analysis: analysis} do
+      assert %{annotation: %{except: [:time], scope: :module}} =
+               analysis.results[{:pure_module_erl, :plain, 2}]
+    end
+
+    test "waives the class it names", %{analysis: analysis} do
+      assert {:impure, [{:time, _, _}]} = Pure.verdict(analysis, {:pure_module_erl, :stamped, 0})
+      assert Pure.violations(analysis) == []
+    end
   end
 end

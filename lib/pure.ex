@@ -38,12 +38,26 @@ defmodule Pure do
       defmodule MyApp.Core do
         use Pure
 
-        @pure true
-        def total(items), do: Enum.sum_by(items, & &1.amount)
+        @pure_module true
+
+        @pure except: [:time]
+        def stamp(item), do: %{item | at: DateTime.utc_now()}
       end
 
-  `mix pure --check` then fails the build if `total/1` ever stops being
-  pure. Erlang modules can use `-pure_annotated([{total, 1}]).`
+  `mix pure --check` then fails the build if any of it stops being true.
+  `except:` waives whole classes of effect for the one function that
+  wrote it: a caller annotated plain `@pure` still fails on the clock its
+  callee reads. `@pure_module` makes the claim for every public function
+  in the module, including the ones written tomorrow, and a function may
+  narrow what its module waives but not widen it.
+
+  Erlang modules write the same two things as
+  `-pure_annotated([{total, 1}, {stamp, 1, [time]}]).` and
+  `-pure_module([{except, [time]}]).`
+
+  Projects that run Credo can have the same answers as Credo issues, on
+  the line the annotation sits on, by adding `Pure.Check.Purity` to
+  `.credo.exs`.
 
   ## What it cannot see
 
@@ -63,16 +77,9 @@ defmodule Pure do
       effects here.
   """
 
-  alias Pure.{Analyzer, Beam}
+  alias Pure.{Analyzer, Annotation, Beam}
 
   @type analysis :: %{results: %{mfa() => Analyzer.result()}, skipped: [Beam.failure()]}
-
-  # Compiler-generated functions that say nothing about the code as written.
-  @generated [{:module_info, 0}, {:module_info, 1}, {:__info__, 1}]
-
-  # Macros compile to `MACRO-name/arity`. They run at compile time, where
-  # purity is a different question, so they are left out of reports.
-  @macro_prefix "MACRO-"
 
   @doc """
   Analyse modules, directories or `.beam` files.
@@ -129,16 +136,82 @@ defmodule Pure do
   def pure?(analysis, mfa), do: verdict(analysis, mfa) == :pure
 
   @doc """
-  Functions annotated `@pure true` whose verdict is not `:pure`.
+  Annotated functions whose verdict does not keep what the annotation claimed.
 
-  This is what `mix pure --check` fails on.
+  The classes an annotation waives are dropped first, so a function
+  annotated `@pure except: [:time]` appears here only for the effects it
+  did not own up to. This and `annotation_problems/1` are what
+  `mix pure --check` fails on.
   """
   @spec violations(analysis()) :: [{mfa(), Analyzer.verdict()}]
   def violations(%{results: results}) do
-    for {mfa, %{annotated: true, verdict: verdict}} <- results,
-        verdict != :pure,
-        do: {mfa, verdict}
+    violations =
+      for {mfa, %{annotation: %{except: except}, verdict: verdict}} <- results,
+          {:violation, unwaived} <- [Annotation.check(verdict, except)],
+          do: {mfa, unwaived}
+
+    Enum.sort(violations)
   end
+
+  @doc """
+  Waivers that have outlived the effect they were written for.
+
+  `@pure except: [:time]` on a function that no longer reads the clock is
+  not wrong, only untrue, so this is reported apart from `violations/1`
+  and never fails a build on its own.
+
+  A `@pure_module` waiver is judged over the module rather than over each
+  function it covers: it exists so that *some* function may read the
+  clock, and the ones that do not are the point of the annotation, not a
+  finding.
+  """
+  @spec stale_waivers(analysis()) :: [{mfa() | module(), [Pure.Knowledge.category()]}]
+  def stale_waivers(%{results: results}) do
+    per_function =
+      for {mfa, %{annotation: %{except: except, scope: :function}, effects: effects}} <- results,
+          except != [],
+          stale = Annotation.stale(effects, except),
+          stale != [],
+          do: {mfa, stale}
+
+    Enum.sort(per_function ++ per_module(results))
+  end
+
+  defp per_module(results) do
+    results
+    |> Enum.filter(&match?({_mfa, %{annotation: %{scope: :module}}}, &1))
+    |> Enum.group_by(fn {{module, _function, _arity}, _result} -> module end)
+    |> Enum.flat_map(fn {module, covered} ->
+      [{_mfa, %{annotation: %{except: except}}} | _rest] = covered
+      effects = Enum.flat_map(covered, fn {_mfa, result} -> result.effects end)
+
+      case Annotation.stale(effects, except) do
+        [] -> []
+        stale -> [{module, stale}]
+      end
+    end)
+  end
+
+  @doc """
+  Annotations that are wrong in themselves: a misspelt effect class, a
+  value that is neither `true` nor `except: [...]`, or a function waiving
+  more than its module's `@pure_module` allows.
+
+  A problem with the module's own annotation is reported against the
+  module rather than once per function it covers.
+  """
+  @spec annotation_problems(analysis()) :: [{mfa() | module(), Annotation.problem()}]
+  def annotation_problems(%{results: results}) do
+    found =
+      for {mfa, %{annotation: %{problems: problems, scope: scope}}} <- results,
+          problem <- problems,
+          do: {subject(scope, mfa), problem}
+
+    found |> Enum.uniq() |> Enum.sort()
+  end
+
+  defp subject(:module, {module, _function, _arity}), do: module
+  defp subject(:function, mfa), do: mfa
 
   @doc """
   Whether a function is compiler-generated or compile-time only.
@@ -153,27 +226,63 @@ defmodule Pure do
       false
   """
   @spec generated?(mfa()) :: boolean()
-  def generated?({_module, function, arity}) do
-    {function, arity} in @generated or
-      String.starts_with?(Atom.to_string(function), @macro_prefix)
-  end
+  defdelegate generated?(mfa), to: Analyzer
 
   @doc false
   defmacro __using__(_opts) do
     quote do
       Module.register_attribute(__MODULE__, :pure, persist: false)
+      Module.register_attribute(__MODULE__, :pure_module, persist: true)
       Module.register_attribute(__MODULE__, :pure_annotated, accumulate: true, persist: true)
       @on_definition Pure
+      @before_compile Pure
+    end
+  end
+
+  @doc false
+  defmacro __before_compile__(env) do
+    case Module.get_attribute(env.module, :pure_module) do
+      nil -> :ok
+      value -> parse!(value, Annotation.subject(env.module))
+    end
+
+    quote do
     end
   end
 
   @doc false
   def __on_definition__(env, kind, name, args, _guards, _body) when kind in [:def, :defp] do
-    if Module.get_attribute(env.module, :pure) do
-      Module.delete_attribute(env.module, :pure)
-      Module.put_attribute(env.module, :pure_annotated, {name, length(args)})
+    case Module.get_attribute(env.module, :pure) do
+      nil ->
+        :ok
+
+      value ->
+        Module.delete_attribute(env.module, :pure)
+        except = parse!(value, Annotation.subject({env.module, name, length(args)}))
+        defaults = Enum.count(args, &match?({:\\, _meta, [_argument, _default]}, &1))
+
+        for arity <- Annotation.arities(length(args), defaults) do
+          Module.put_attribute(env.module, :pure_annotated, entry(name, arity, except))
+        end
     end
   end
 
   def __on_definition__(_env, _kind, _name, _args, _guards, _body), do: :ok
+
+  # An empty waiver list keeps the two-element shape the attribute has
+  # always had, which is also what Erlang's -pure_annotated writes.
+  defp entry(name, arity, []), do: {name, arity}
+  defp entry(name, arity, except), do: {name, arity, except}
+
+  # A misspelt effect class waives nothing, so failing the compile beats
+  # letting the annotation look stricter than it is.
+  defp parse!(value, subject) do
+    case Annotation.parse(value) do
+      {:ok, except} ->
+        except
+
+      {:error, problem} ->
+        raise ArgumentError, "#{subject} #{Annotation.describe_problem(problem)}"
+    end
+  end
 end
