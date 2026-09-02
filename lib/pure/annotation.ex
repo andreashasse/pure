@@ -185,10 +185,17 @@ defmodule Pure.Annotation do
 
       iex> Pure.Annotation.describe_problem({:unknown_effects, [:tyme]})
       "waives :tyme, which is not an effect class"
+
+      iex> Pure.Annotation.describe_problem({:unknown_effects, [:tyme, :aio]})
+      "waives :tyme, :aio, which are not effect classes"
   """
   @spec describe_problem(problem()) :: String.t()
+  def describe_problem({:unknown_effects, [unknown]}) do
+    "waives #{inspect(unknown)}, which is not an effect class"
+  end
+
   def describe_problem({:unknown_effects, unknown}) do
-    "waives #{list(unknown)}, which #{if length(unknown) > 1, do: "are", else: "is"} not an effect class"
+    "waives #{list(unknown)}, which are not effect classes"
   end
 
   def describe_problem({:widens, widened}) do

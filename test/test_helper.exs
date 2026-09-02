@@ -2,6 +2,6 @@
 # run it with `mix test --include stdlib`.
 ExUnit.start(exclude: [:stdlib])
 
-# Credo is a `runtime: false` dependency, so the caches its checks parse
-# source files through are not started for us.
+# Credo is a `runtime: false` dependency, so the caches its checks rely
+# on to parse source files are not started for us.
 {:ok, _started} = Application.ensure_all_started(:credo)
