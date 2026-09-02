@@ -10,9 +10,12 @@ defmodule Mix.Tasks.PureTest do
     :ok
   end
 
+  # These are about what the task reports, not about how far it follows a
+  # call graph, and reading every dependency's beam files for each of them
+  # costs more than the rest of the suite put together.
   defp run(argv) do
     Mix.Task.reenable("pure")
-    Mix.Tasks.Pure.run(argv)
+    Mix.Tasks.Pure.run(["--no-deps" | argv])
     drain()
   end
 
@@ -83,7 +86,7 @@ defmodule Mix.Tasks.PureTest do
   end
 
   test "--check fails when an annotated function is not pure" do
-    assert_raise Mix.Error, ~r/annotated @pure are not pure/, fn -> run(["--check"]) end
+    assert_raise Mix.Error, ~r/annotation\(s\) are not kept/, fn -> run(["--check"]) end
 
     assert drain() =~ "Pure.Sample.annotated_but_impure/1 is annotated @pure but is impure"
   end

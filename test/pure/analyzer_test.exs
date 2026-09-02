@@ -242,8 +242,10 @@ defmodule Pure.AnalyzerTest do
 
   describe "annotations" do
     test "@pure true is carried through to the result", context do
-      assert %{annotated: true} = context.analysis.results[{Pure.Sample, :add, 2}]
-      assert %{annotated: false} = context.analysis.results[{Pure.Sample, :writes, 1}]
+      assert %{annotation: %{except: [], scope: :function, problems: []}} =
+               context.analysis.results[{Pure.Sample, :add, 2}]
+
+      assert %{annotation: nil} = context.analysis.results[{Pure.Sample, :writes, 1}]
     end
 
     test "an annotated function that is not pure is a violation", context do

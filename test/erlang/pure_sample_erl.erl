@@ -6,11 +6,12 @@
 -export([add/2, sum/1, hof/2, applies/1, sends/1, receives/0, dict/1,
          table/1, spawns/1, dynamic/2, local_bif/0, capture_pure/1,
          capture_impure/1, annotated_impure/1, bound_fun/1,
-         imported/1]).
+         imported/1, stamped/1]).
 
 -import(lists, [reverse/1]).
 
--pure_annotated([{add, 2}, {sum, 1}, {annotated_impure, 1}]).
+-pure_annotated([{add, 2}, {sum, 1}, {annotated_impure, 1},
+                 {stamped, 1, [time]}]).
 
 add(A, B) ->
     A + B.
@@ -64,3 +65,8 @@ annotated_impure(X) ->
 %% -import turns this into a local call in the abstract code.
 imported(List) ->
     reverse(List).
+
+%% A waiver, written the Erlang way: the third element of the tuple is
+%% the list of effect classes this function owns up to.
+stamped(X) ->
+    {erlang:system_time(), X}.

@@ -38,7 +38,7 @@ mix pure --check             # fail the build if a @pure function is not pure
 
 | Option | Effect |
 | --- | --- |
-| `--check` | Exit non-zero when a function annotated `@pure true` is not pure. The CI mode. |
+| `--check` | Exit non-zero when an annotation is not kept. The CI mode. |
 | `--all` | List pure functions too. |
 | `--no-deps` | Do not follow calls into dependencies. Faster, at the cost of reporting every call into a library as unknown. |
 | `--unknown` | List functions whose purity could not be determined. |
@@ -81,11 +81,119 @@ end
 ```
 
 `mix pure --check` now fails if `fee/2` ever grows an effect — a
-functional core that stays a functional core. In Erlang:
+functional core that stays a functional core.
+
+A function that owns up to one kind of effect says which:
+
+```elixir
+@pure except: [:time]
+def quote(amount), do: {DateTime.utc_now(), fee(amount, 0.03)}
+```
+
+The waiver belongs to `quote/1` and to nothing else. A caller annotated
+plain `@pure` still fails on the clock its callee reads, which is what
+stops a waiver from laundering effects through the rest of the call
+graph. Telling the analyser about code it cannot see is a different job,
+and `:known` below is where that lives.
+
+A whole module can make the claim at once, which is the useful form for a
+functional core: a function added to it tomorrow is covered the day it
+lands.
+
+```elixir
+defmodule Payments.Core do
+  use Pure
+
+  @pure_module except: [:time]
+
+  def fee(amount, rate), do: round(amount * rate)
+end
+```
+
+A module-wide claim covers every public function and no private one. A
+function inside it may narrow what its module waives, never widen it. To
+exempt one function entirely, use Credo's own
+`# credo:disable-for-next-line Pure.Check.Purity`.
+
+The classes an annotation may name are the ones the analyser reports:
+`:io`, `:file`, `:network`, `:system`, `:time`, `:random`, `:process`,
+`:process_dictionary`, `:message`, `:message_receive`, `:ets`,
+`:persistent_term`, `:mutable_state`, `:code_loading`, `:port`,
+`:tracing`, and the three that mean the trail was lost rather than an
+effect found: `:dynamic_call`, `:higher_order` and `:unknown`. A
+misspelt one is an error rather than a waiver of nothing, and fails the
+compile.
+
+Two verdicts keep a claim rather than breaking it. A higher-order
+function is pure in itself — whoever hands it `&IO.puts/1` fails on
+their own annotation — so `conditional` passes. `unknown` does not: an
+annotation nobody can check is the case this tool exists to report, and
+waiving it takes saying `except: [:unknown]`.
+
+In Erlang:
 
 ```erlang
--pure_annotated([{fee, 2}]).
+-pure_annotated([{fee, 2}, {quote, 1, [time]}]).
+-pure_module([{except, [time]}]).
 ```
+
+## As a Credo check
+
+If the project already runs Credo, the same answers arrive as ordinary
+Credo issues, on the line the annotation sits on:
+
+```elixir
+# .credo.exs
+%{
+  configs: [
+    %{
+      name: "default",
+      checks: %{extra: [{Pure.Check.Purity, []}]}
+    }
+  ]
+}
+```
+
+```
+┃ [W] ↗ charge/2 is annotated @pure but is impure: performs I/O
+┃       (IO.puts/1) via Payments.Core.log/1
+┃       lib/payments/core.ex:24:7 #(Payments.Core.charge)
+```
+
+Credo has to be a dependency of your project for the check to exist:
+this library declares it as optional, so without it the check is not
+compiled at all and `pure` still brings nothing with it.
+
+```elixir
+{:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+```
+
+| Param | Effect |
+| --- | --- |
+| `known` | The same `%{mfa => answer}` map as `mix.exs`, merged over it. |
+| `follow_deps` | Follow calls into dependencies. On by default; without it, a call into a library is `unknown` and an annotation that reaches one cannot be kept. |
+
+The check reads annotations from the source and answers from the
+compiled code, which has three consequences worth knowing:
+
+- **Compile first.** The check never compiles anything itself. A module
+  missing from the build, or older than the file it was compiled from,
+  is reported as unchecked rather than quietly passed. Run `mix compile`
+  before `mix credo` in CI.
+- **One analysis per run.** Purity is a property of the call graph, not
+  of a file, so the whole project is analysed once and every annotation
+  in the run reads its answer from that. A module in the call graph of
+  forty annotated functions is read, scanned and settled exactly once.
+  A project with no annotations at all pays nothing: the check looks for
+  them first and stops there.
+- **A `def` written by a macro has no annotation in the source to
+  find.** `mix pure --check` reads the compiled attribute instead, and
+  stays the way to cover those, along with Erlang modules.
+
+A waiver that has outlived the effect it was written for is reported
+too, at low priority and with no exit status of its own: an annotation
+that is merely out of date says something untrue about the code, but it
+cannot make the check miss anything, so it does not fail a build.
 
 ## Teaching it about a library
 

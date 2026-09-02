@@ -11,12 +11,15 @@ defmodule Mix.Tasks.Pure do
       mix pure                     # summary for every module in the project
       mix pure MyApp.Core          # every function in one module
       mix pure MyApp.Core.total/1  # one function, with the reasons
-      mix pure --check             # fail if a @pure function is not pure
+      mix pure --check             # fail if an annotation is not kept
 
   ## Options
 
-    * `--check` - exit non-zero if any function annotated `@pure true`
-      is not pure. This is the CI mode.
+    * `--check` - exit non-zero if an annotation is not kept: a `@pure`
+      function that reaches an effect it did not waive, or an annotation
+      that is wrong in itself. Waivers nothing needs any more are
+      reported without failing anything. This is the CI mode, and
+      `Pure.Check.Purity` is the same thing as a Credo check.
     * `--all` - list pure functions too, not just the interesting ones.
     * `--no-deps` - do not follow calls into dependencies. Faster, at
       the cost of reporting every call into a library as unknown.
@@ -42,7 +45,7 @@ defmodule Mix.Tasks.Pure do
 
   use Mix.Task
 
-  alias Pure.Analyzer
+  alias Pure.{Analyzer, Annotation}
 
   @switches [check: :boolean, all: :boolean, deps: :boolean, unknown: :boolean, private: :boolean]
 
@@ -92,7 +95,9 @@ defmodule Mix.Tasks.Pure do
     |> Enum.sort_by(fn {{_, f, a}, _} -> {f, a} end)
     |> Enum.each(fn {{_, f, a}, result} ->
       name = String.pad_trailing("#{f}/#{a}", 32)
-      annotation = if result.annotated, do: " @pure", else: ""
+
+      annotation =
+        if result.annotation, do: " " <> Annotation.explain(result.annotation), else: ""
 
       Mix.shell().info(
         "  " <> name <> colorize(result.verdict, Analyzer.explain(result.verdict) <> annotation)
@@ -129,19 +134,30 @@ defmodule Mix.Tasks.Pure do
   ## Check mode -------------------------------------------------------------
 
   defp check(analysis) do
-    case Pure.violations(analysis) do
-      [] ->
-        annotated = Enum.count(analysis.results, fn {_, result} -> result.annotated end)
-        Mix.shell().info("All #{annotated} annotated functions are pure.")
+    violations = Pure.violations(analysis)
+    problems = Pure.annotation_problems(analysis)
 
-      violations ->
-        Enum.each(violations, fn {mfa, verdict} ->
-          Mix.shell().error(
-            "#{format(mfa)} is annotated @pure but is #{Analyzer.explain(verdict)}"
-          )
-        end)
+    # A waiver nothing needs any more only ever makes the check more
+    # permissive, so it is said out loud and then let through.
+    Enum.each(Pure.stale_waivers(analysis), fn {mfa, stale} ->
+      Mix.shell().info("#{format(mfa)} waives #{inspect(stale)}, which it does not do")
+    end)
 
-        Mix.raise("#{length(violations)} function(s) annotated @pure are not pure")
+    Enum.each(problems, fn {subject, problem} ->
+      Mix.shell().error("#{Annotation.subject(subject)} #{Annotation.describe_problem(problem)}")
+    end)
+
+    Enum.each(violations, fn {mfa, verdict} ->
+      Mix.shell().error("#{format(mfa)} is annotated @pure but is #{Analyzer.explain(verdict)}")
+    end)
+
+    failures = length(violations) + length(problems)
+
+    if failures == 0 do
+      annotated = Enum.count(analysis.results, fn {_mfa, result} -> result.annotation end)
+      Mix.shell().info("All #{annotated} annotated functions are pure.")
+    else
+      Mix.raise("#{failures} annotation(s) are not kept")
     end
   end
 
