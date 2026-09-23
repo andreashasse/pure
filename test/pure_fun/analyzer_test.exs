@@ -345,6 +345,16 @@ defmodule PureFun.AnalyzerTest do
   end
 
   describe "group/1" do
+    test "a class is one group even when its reasons are not next to each other" do
+      reasons = [
+        {:io, {IO, :puts, 1}, nil},
+        {:time, {DateTime, :utc_now, 0}, nil},
+        {:io, {IO, :warn, 1}, nil}
+      ]
+
+      assert [{:io, [_, _]}, {:time, [_]}] = PureFun.Analyzer.group(reasons)
+    end
+
     test "an origin reached through two callees is listed once" do
       reasons = [
         {:unknown, {Ecto.Changeset, :get_field, 2}, {App, :a, 1}},

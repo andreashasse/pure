@@ -155,12 +155,17 @@ defmodule PureFun.Analyzer do
   """
   @spec group([reason()]) :: [{Knowledge.category(), [{mfa() | nil, mfa() | nil}]}]
   def group(reasons) do
+    reasons = Enum.uniq_by(reasons, fn {category, origin, _via} -> {category, origin} end)
+
+    grouped =
+      Enum.group_by(reasons, &elem(&1, 0), fn {_category, origin, via} -> {origin, via} end)
+
+    # In the order each class first appears, whatever order the reasons
+    # came in.
     reasons
-    |> Enum.uniq_by(fn {category, origin, _via} -> {category, origin} end)
-    |> Enum.chunk_by(fn {category, _origin, _via} -> category end)
-    |> Enum.map(fn [{category, _, _} | _] = chunk ->
-      {category, Enum.map(chunk, fn {_category, origin, via} -> {origin, via} end)}
-    end)
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.uniq()
+    |> Enum.map(&{&1, Map.fetch!(grouped, &1)})
   end
 
   @doc """
