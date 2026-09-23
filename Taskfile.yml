@@ -15,7 +15,7 @@ tasks:
 
   test:
     cmds:
-      - mix test
+      - mix test --include host_project
 
   credo:
     cmds:

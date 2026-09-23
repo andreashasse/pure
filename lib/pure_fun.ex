@@ -90,6 +90,9 @@ defmodule PureFun do
     * `:paths` - directories or `.beam` files to analyse
     * `:known` - `%{mfa => PureFun.Knowledge.answer}` overrides for
       functions the built-in knowledge base does not cover
+    * `:roots` - the modules to answer for. Everything else that was
+      loaded is analysed only as far as these reach it. Defaults to
+      every module loaded.
 
   Everything reachable but not listed is resolved through
   `PureFun.Knowledge`, so analysing a single module still gives useful
@@ -104,7 +107,7 @@ defmodule PureFun do
       |> Beam.load()
       |> Beam.load_implementations()
 
-    %{results: Analyzer.analyze(forms, Keyword.take(opts, [:known])), skipped: skipped}
+    %{results: Analyzer.analyze(forms, Keyword.take(opts, [:known, :roots])), skipped: skipped}
   end
 
   @doc """

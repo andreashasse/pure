@@ -228,7 +228,7 @@ defmodule PureFun.AnalyzerTest do
 
       explanation = PureFun.Analyzer.explain({:impure, reasons})
 
-      assert explanation =~ "(and 3 more)"
+      assert explanation =~ "and 3 more)"
       refute explanation =~ "IO.puts/4"
     end
 
@@ -294,5 +294,88 @@ defmodule PureFun.AnalyzerTest do
 
     assert %{verdict: {:impure, [{:network, {NoSuchLib, :go, 0}, nil}]}} =
              PureFun.Analyzer.analyze(forms, known: known)[{Fake, :run, 0}]
+  end
+
+  describe "roots" do
+    test "only what the roots reach is analysed" do
+      %{results: results} =
+        PureFun.analyze(modules: [PureFun.Sample, PureFun.Knowledge], roots: [PureFun.Sample])
+
+      refute Enum.any?(results, &match?({{PureFun.Knowledge, _f, _a}, _result}, &1))
+    end
+
+    test "leaving code out does not change the answers for the roots", context do
+      %{results: rooted} =
+        PureFun.analyze(modules: [PureFun.Sample, PureFun.Knowledge], roots: [PureFun.Sample])
+
+      for {mfa, result} <- rooted do
+        assert result == context.analysis.results[mfa]
+      end
+    end
+  end
+
+  describe "a callee that reaches many origins of one class" do
+    # Fake.run/0 calls Fake.many/0, which calls 30 functions nobody knows.
+    setup do
+      calls =
+        for n <- 1..30 do
+          {:call, 1, {:remote, 1, {:atom, 1, NoSuchLib}, {:atom, 1, :"go#{n}"}}, []}
+        end
+
+      forms = %{
+        Fake => [
+          {:function, 1, :run, 0, [{:clause, 1, [], [], [{:call, 1, {:atom, 1, :many}, []}]}]},
+          {:function, 1, :many, 0, [{:clause, 1, [], [], calls}]}
+        ]
+      }
+
+      %{results: PureFun.Analyzer.analyze(forms)}
+    end
+
+    test "passes on a bounded number of them", %{results: results} do
+      assert {:unknown, reasons} = results[{Fake, :run, 0}].verdict
+      assert length(reasons) == 20
+      assert Enum.all?(reasons, &match?({:unknown, {NoSuchLib, _go, 0}, {Fake, :many, 0}}, &1))
+    end
+
+    test "keeps every one the function has itself", %{results: results} do
+      assert {:unknown, reasons} = results[{Fake, :many, 0}].verdict
+      assert length(reasons) == 30
+    end
+  end
+
+  describe "group/1" do
+    test "a class is one group even when its reasons are not next to each other" do
+      reasons = [
+        {:io, {IO, :puts, 1}, nil},
+        {:time, {DateTime, :utc_now, 0}, nil},
+        {:io, {IO, :warn, 1}, nil}
+      ]
+
+      assert [{:io, [_, _]}, {:time, [_]}] = PureFun.Analyzer.group(reasons)
+    end
+
+    test "an origin reached through two callees is listed once" do
+      reasons = [
+        {:unknown, {Ecto.Changeset, :get_field, 2}, {App, :a, 1}},
+        {:unknown, {Ecto.Changeset, :get_field, 2}, {App, :b, 1}},
+        {:unknown, {Ecto.Changeset, :put_change, 3}, nil}
+      ]
+
+      assert PureFun.Analyzer.explain({:unknown, reasons}) ==
+               "unknown: calls a function the analyser knows nothing about " <>
+                 "(Ecto.Changeset.get_field/2, put_change/3)"
+    end
+
+    test "each class is explained once" do
+      reasons = [
+        {:io, {IO, :puts, 1}, nil},
+        {:io, {IO, :warn, 1}, nil},
+        {:time, {DateTime, :utc_now, 0}, nil}
+      ]
+
+      assert PureFun.Analyzer.explain({:impure, reasons}) ==
+               "impure: performs I/O (IO.puts/1, warn/1); reads the clock (DateTime.utc_now/0)"
+    end
   end
 end

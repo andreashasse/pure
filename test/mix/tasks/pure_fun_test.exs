@@ -82,8 +82,8 @@ defmodule Mix.Tasks.PureFunTest do
   end
 
   test "private functions are left out unless asked for" do
-    refute run(["--all", "PureFun.Analyzer"]) =~ "scan_module/2"
-    assert run(["--all", "--private", "PureFun.Analyzer"]) =~ "scan_module/2"
+    refute run(["--all", "PureFun.Analyzer"]) =~ "scan_function/3"
+    assert run(["--all", "--private", "PureFun.Analyzer"]) =~ "scan_function/3"
   end
 
   test "--unknown surfaces functions whose purity could not be determined" do
@@ -98,5 +98,34 @@ defmodule Mix.Tasks.PureFunTest do
 
   test "an unknown switch is rejected" do
     assert_raise OptionParser.ParseError, fn -> run(["--nonsense"]) end
+  end
+
+  test "an annotation is set apart from the verdict" do
+    assert run(["PureFun.Sample.add/2"]) =~ ~r/add\/2\s+pure  \[@pure_fun\]/
+  end
+
+  test "a verdict with several origins lists them once, by class, below it" do
+    output = run(["PureFun.Sample.interpolates/1"])
+
+    assert output =~ ~r/interpolates\/1\s+impure\n/
+    assert output =~ "performs I/O: IO.puts/1 via String.Chars.PureFun.Sample.Loud.to_string/1"
+
+    assert output =~
+             "calls a function decided at runtime: String.Chars.Date.to_string/1, " <>
+               "String.Chars.DateTime.to_string/1"
+  end
+
+  test "unknown calls come with how to resolve them" do
+    output = run(["PureFun.Sample.Waivers.unknowable/1"])
+
+    assert output =~ "Run without --no-deps"
+    assert output =~ "known:"
+  end
+
+  test "says what it is about to do and how long it took" do
+    output = run(["PureFun.Sample"])
+
+    assert output =~ "Analysing 1 module..."
+    assert output =~ ~r/Analysed \d+ functions in [\d.]+ s\./
   end
 end
