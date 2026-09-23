@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-23
+
+### Added
+- A `:roots` option for `PureFun.analyze/1` and `PureFun.Analyzer.analyze/2`. It limits the analysis to the functions that the given modules reach.
+
 ### Fixed
 - `PureFun.Check.Purity` was not compiled when pure_fun was a dependency, because Credo was declared `only: [:dev, :test]`. Mix ignores such dependencies of a dependency, so whether the check existed depended on build order. `mix credo` then printed "Ignoring an undefined check" and passed.
 - The README install snippet used `only: [:dev, :test]`, which breaks `MIX_ENV=prod mix compile` in any project with `use PureFun`.
