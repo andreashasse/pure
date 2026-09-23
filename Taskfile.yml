@@ -1,0 +1,65 @@
+version: "3"
+
+tasks:
+  ci:
+    desc: Run everything CI runs
+    cmds:
+      - task: compile
+      - task: test
+      - task: credo
+      - task: check_format
+
+  compile:
+    cmds:
+      - mix compile --force --warnings-as-errors
+
+  test:
+    cmds:
+      - mix test
+
+  credo:
+    cmds:
+      - mix credo --strict
+
+  check_format:
+    cmds:
+      - mix format --check-formatted
+
+  format:
+    cmds:
+      - mix format
+
+  docs:
+    cmds:
+      - mix docs
+
+  shell:
+    interactive: true
+    cmds:
+      - iex -S mix
+
+  release:
+    desc: Tag, publish to Hex and create a GitHub release
+    interactive: true
+    cmds:
+      - |
+        set -eu
+        [ -z "$(git status --porcelain)" ] || { echo "Worktree is not clean. Commit or stash first. Aborted."; exit 1; }
+        echo "Last 5 tags:"
+        git tag --sort=-version:refname | head -n 5
+        echo ""
+        printf "Enter the next tag (e.g., 1.0.0): "
+        read -r tag
+        [ -n "$tag" ] || { echo "Tag cannot be empty. Aborted."; exit 1; }
+        grep -q "version: \"$tag\"" mix.exs || { echo "mix.exs version is not $tag. Aborted."; exit 1; }
+        grep -q "## \[$tag\]" CHANGELOG.md || { echo "CHANGELOG.md has no [$tag] section. Aborted."; exit 1; }
+        printf "Did you update the README install instructions? (Y/N) "
+        read -r a
+        [ "$a" = "Y" ] || { echo "Aborted."; exit 1; }
+        git tag "$tag"
+        mix compile
+        mix hex.publish
+        git push origin "$tag"
+        gh release create "$tag" --title "v$tag" \
+          --notes "$(awk -v tag="$tag" '$0 ~ "^## \\[" tag "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md)"
+        echo "Released and tagged as $tag with GitHub release"
