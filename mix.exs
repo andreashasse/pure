@@ -42,9 +42,13 @@ defmodule PureFun.MixProject do
   # when the project using this library has Credo of its own, so a
   # build-time analysis tool everyone is expected to add to their project
   # still drags nothing in.
+  #
+  # It must not say `only:`. The host project ignores the `only:`
+  # dependencies of a dependency, so Credo would then not be built before
+  # this library, and the check would be compiled or not by luck.
   defp deps do
     [
-      {:credo, "~> 1.7", optional: true, only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7", optional: true, runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end

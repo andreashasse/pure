@@ -251,6 +251,9 @@ defmodule PureFun.Check.PurityTest do
     } do
       path = Path.join(tmp_dir, "waivers.ex")
       File.write!(path, File.read!(@waivers))
+      # Modification times have a resolution of a second, and the beam may
+      # have been written in this one.
+      File.touch!(path, System.os_time(:second) + 60)
 
       assert [issue] = check(path)
       assert issue.message =~ "PureFun.Sample.Waivers has changed since it was last compiled"

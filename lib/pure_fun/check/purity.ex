@@ -91,7 +91,8 @@ if Code.ensure_loaded?(Credo.Check) do
 
       # The analysis is worth nothing to a project that makes no claims,
       # and it reads every beam file in the build to produce it.
-      issues = if annotated == [], do: [], else: report(annotated, analyze(params), params)
+      issues =
+        if annotated == [], do: [], else: report(annotated, analyze(annotated, params), params)
 
       append_issues_and_timings(issues, exec)
 
@@ -100,11 +101,15 @@ if Code.ensure_loaded?(Credo.Check) do
 
     # One analysis for the whole run. Purity is a property of the call
     # graph rather than of a file, so a module reached from forty
-    # annotated functions is still read, scanned and settled exactly once.
-    defp analyze(params) do
+    # annotated functions is still read, scanned and settled exactly once,
+    # and code no annotated module can reach is not settled at all.
+    defp analyze(annotated, params) do
+      roots = for {_source_file, modules} <- annotated, entry <- modules, do: entry.module
+
       PureFun.analyze(
         paths: Beam.build_dirs(deps: Params.get(params, :follow_deps, __MODULE__)),
-        known: known(params)
+        known: known(params),
+        roots: roots
       )
     end
 

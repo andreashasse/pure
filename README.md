@@ -23,9 +23,13 @@ the function that has it.
 
 ```elixir
 def deps do
-  [{:pure_fun, "~> 0.1", only: [:dev, :test], runtime: false}]
+  [{:pure_fun, "~> 0.1", runtime: false}]
 end
 ```
+
+Do not add `only: [:dev, :test]`. An annotated module calls `use PureFun`,
+so every environment that compiles it, `:prod` included, needs the
+library. `runtime: false` keeps it out of the release.
 
 ## Use
 
@@ -40,7 +44,7 @@ mix pure_fun --check             # fail the build if a @pure_fun function is not
 | --- | --- |
 | `--check` | Exit non-zero when an annotation is not kept. The CI mode. |
 | `--all` | List pure functions too. |
-| `--no-deps` | Do not follow calls into dependencies. Faster, at the cost of reporting every call into a library as unknown. |
+| `--no-deps` | Do not follow calls into dependencies. Every call into a library is then unknown. |
 | `--unknown` | List functions whose purity could not be determined. |
 | `--private` | Include private functions. |
 
@@ -181,11 +185,12 @@ compiled code, which has three consequences worth knowing:
   is reported as unchecked rather than quietly passed. Run `mix compile`
   before `mix credo` in CI.
 - **One analysis per run.** Purity is a property of the call graph, not
-  of a file, so the whole project is analysed once and every annotation
-  in the run reads its answer from that. A module in the call graph of
-  forty annotated functions is read, scanned and settled exactly once.
-  A project with no annotations at all pays nothing: the check looks for
-  them first and stops there.
+  of a file, so the project is analysed once and every annotation in the
+  run reads its answer from that. Only code that an annotated module can
+  reach is analysed. A module in the call graph of forty annotated
+  functions is read, scanned and settled exactly once. A project with no
+  annotations at all pays nothing: the check looks for them first and
+  stops there.
 - **A `def` written by a macro has no annotation in the source to
   find.** `mix pure_fun --check` reads the compiled attribute instead, and
   stays the way to cover those, along with Erlang modules.
@@ -296,7 +301,8 @@ lie, and it always wins over what the code appears to do.
 ```bash
 mix test
 mix test --cover
-mix pure_fun --all   # it analyses itself
+mix test --include host_project   # builds a project that depends on pure_fun
+mix pure_fun --all                # it analyses itself
 ```
 
 Running it on itself reports every function of the analysis core as

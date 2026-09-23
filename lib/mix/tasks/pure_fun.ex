@@ -55,69 +55,113 @@ defmodule Mix.Tasks.PureFun do
     Mix.Task.run("compile", [])
 
     config = Keyword.get(Mix.Project.config(), :pure_fun, [])
+    deps? = Keyword.get(opts, :deps, true)
+    filters = Enum.map(filters, &parse_filter/1)
+    roots = roots(filters)
 
-    analysis =
-      PureFun.analyze(
-        paths: PureFun.Beam.build_dirs(deps: Keyword.get(opts, :deps, true)),
-        known: Keyword.get(config, :known, %{})
-      )
+    Mix.shell().info(
+      "Analysing #{count(roots, "module")}" <>
+        if(deps?, do: " and the dependencies they call", else: "") <> "..."
+    )
+
+    {microseconds, analysis} =
+      :timer.tc(fn ->
+        PureFun.analyze(
+          paths: PureFun.Beam.build_dirs(deps: deps?),
+          known: Keyword.get(config, :known, %{}),
+          roots: roots
+        )
+      end)
+
+    Mix.shell().info(
+      "Analysed #{count(analysis.results, "function")} in " <>
+        "#{Float.round(microseconds / 1_000_000, 1)} s."
+    )
 
     warn_skipped(analysis.skipped)
+    in_roots = Enum.filter(analysis.results, fn {{module, _f, _a}, _} -> module in roots end)
 
     if opts[:check] do
-      check(analysis)
+      check(%{analysis | results: Map.new(in_roots)}, deps?)
     else
-      analysis.results
-      |> interesting(opts, Enum.map(filters, &parse_filter/1))
-      |> report(opts)
+      in_roots
+      |> interesting(opts, filters)
+      |> report(deps?)
+    end
+  end
+
+  # A filter that names modules only needs those modules, and they may
+  # just as well be dependencies. Anything else is about the project.
+  defp roots(filters) do
+    if filters != [] and Enum.all?(filters, fn {module, _f, _a} -> module end) do
+      filters |> Enum.map(fn {module, _f, _a} -> module end) |> Enum.uniq()
+    else
+      PureFun.Beam.modules(Mix.Project.compile_path())
     end
   end
 
   ## Reporting --------------------------------------------------------------
 
-  defp report([], _opts) do
+  defp report([], _deps?) do
     Mix.shell().info("No matching functions.")
   end
 
-  defp report(results, opts) do
+  defp report(results, deps?) do
     results
     |> Enum.group_by(fn {{module, _, _}, _} -> module end)
     |> Enum.sort_by(fn {module, _} -> inspect(module) end)
-    |> Enum.each(fn {module, functions} -> report_module(module, functions, opts) end)
+    |> Enum.each(fn {module, functions} -> report_module(module, functions) end)
 
     summarize(results)
+    hint(Enum.map(results, fn {_mfa, result} -> result.verdict end), deps?)
   end
 
-  defp report_module(module, functions, opts) do
+  defp report_module(module, functions) do
     Mix.shell().info("\n" <> paint(inspect(module), IO.ANSI.bright()))
 
     functions
     |> Enum.sort_by(fn {{_, f, a}, _} -> {f, a} end)
     |> Enum.each(fn {{_, f, a}, result} ->
       name = String.pad_trailing("#{f}/#{a}", 32)
+      {line, details} = describe(result.verdict)
 
-      annotation =
-        if result.annotation, do: " " <> Annotation.explain(result.annotation), else: ""
-
-      Mix.shell().info(
-        "  " <> name <> colorize(result.verdict, Analyzer.explain(result.verdict) <> annotation)
-      )
-
-      if opts[:all] || verdict_tag(result.verdict) != :pure do
-        Enum.each(details(result), &Mix.shell().info("      " <> &1))
-      end
+      Mix.shell().info("  " <> name <> colorize(result.verdict, line) <> annotation(result))
+      Enum.each(details, &Mix.shell().info("      " <> &1))
     end)
   end
 
-  # The one-liner already names the first reason; the rest are only
-  # worth printing when a function has several.
-  defp details(%{effects: effects}) when length(effects) > 1 do
-    Enum.map(effects, fn {category, mfa, _via} ->
-      "- #{PureFun.Knowledge.describe(category)}#{if mfa, do: " (#{format(mfa)})", else: ""}"
-    end)
+  # A verdict with one origin per effect class reads fine on one line.
+  # Anything longer gets the verdict alone on that line and one line per
+  # class below it, so nothing is said twice.
+  defp describe({tag, reasons} = verdict) when tag in [:impure, :unknown] do
+    groups = Analyzer.group(reasons)
+
+    if length(groups) <= 3 and Enum.all?(groups, &match?({_category, [_one]}, &1)) do
+      {Analyzer.explain(verdict), []}
+    else
+      {to_string(tag), Enum.map(groups, &detail/1)}
+    end
   end
 
-  defp details(_result), do: []
+  defp describe(verdict), do: {Analyzer.explain(verdict), []}
+
+  defp detail({category, [{origin, via}]}) when via not in [nil, origin] do
+    "#{PureFun.Knowledge.describe(category)}: #{origins([origin])} via #{format(via)}"
+  end
+
+  defp detail({category, pairs}) do
+    "#{PureFun.Knowledge.describe(category)}: #{pairs |> Enum.map(&elem(&1, 0)) |> origins()}"
+  end
+
+  defp origins(origins) do
+    itself = if nil in origins, do: ["directly"], else: []
+    listed = if origins == [nil], do: [], else: [Analyzer.list_origins(origins)]
+
+    Enum.join(itself ++ listed, ", ")
+  end
+
+  defp annotation(%{annotation: nil}), do: ""
+  defp annotation(%{annotation: annotation}), do: "  [#{Annotation.explain(annotation)}]"
 
   defp summarize(results) do
     counts = Enum.frequencies_by(results, fn {_, result} -> verdict_tag(result.verdict) end)
@@ -127,13 +171,40 @@ defmodule Mix.Tasks.PureFun do
       |> Enum.map(&"#{Map.get(counts, &1, 0)} #{&1}")
       |> Enum.join(", ")
 
-    total = length(results)
-    Mix.shell().info("\n" <> line <> " (#{total} function#{if total == 1, do: "", else: "s"})")
+    Mix.shell().info("\n" <> line <> " (#{count(results, "function")})")
+  end
+
+  # Said once at the end rather than on every function it applies to.
+  defp hint(verdicts, deps?) do
+    lost? =
+      Enum.any?(verdicts, fn
+        {_tag, reasons} -> Enum.any?(reasons, &match?({:unknown, _origin, _via}, &1))
+        _verdict -> false
+      end)
+
+    if lost? do
+      unless deps? do
+        Mix.shell().info(
+          "\nCalls into dependencies were not followed (--no-deps), so they are " <>
+            "unknown. Run without --no-deps to follow them."
+        )
+      end
+
+      Mix.shell().info(
+        "\nTo tell the analyser what a function it knows nothing about does, " <>
+          "add it to `pure_fun: [known: %{...}]` in mix.exs."
+      )
+    end
+  end
+
+  defp count(enumerable, noun) do
+    n = Enum.count(enumerable)
+    "#{n} #{noun}#{if n == 1, do: "", else: "s"}"
   end
 
   ## Check mode -------------------------------------------------------------
 
-  defp check(analysis) do
+  defp check(analysis, deps?) do
     violations = PureFun.violations(analysis)
     problems = PureFun.annotation_problems(analysis)
 
@@ -154,6 +225,7 @@ defmodule Mix.Tasks.PureFun do
     end)
 
     failures = length(violations) + length(problems)
+    hint(Enum.map(violations, fn {_mfa, verdict} -> verdict end), deps?)
 
     if failures == 0 do
       annotated = Enum.count(analysis.results, fn {_mfa, result} -> result.annotation end)

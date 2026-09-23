@@ -99,6 +99,17 @@ defmodule PureFun.Beam do
     end
   end
 
+  @doc """
+  The modules compiled into a directory, without loading any of them.
+  """
+  @spec modules(Path.t()) :: [module()]
+  def modules(dir) do
+    dir
+    |> Path.join("*.beam")
+    |> Path.wildcard()
+    |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
+  end
+
   defp expand(module) when is_atom(module), do: [module]
 
   defp expand(path) when is_binary(path) do

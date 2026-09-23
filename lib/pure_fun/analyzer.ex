@@ -65,9 +65,13 @@ defmodule PureFun.Analyzer do
   # purity is a different question, so they are left out of reports.
   @macro_prefix "MACRO-"
 
-  # Beyond this a one-line verdict stops being readable; the full list
-  # stays in the result for callers that want it.
+  # Beyond this many origins of one class a one-line verdict stops being
+  # readable; the full list stays in the result for callers that want it.
   @explained_reasons 3
+
+  # How many origins of one effect class a function passes on to its
+  # callers. See keep/2.
+  @kept_per_class 20
 
   @doc """
   Analyse a `%{module => abstract_forms}` map.
@@ -76,20 +80,22 @@ defmodule PureFun.Analyzer do
 
     * `:known` - a `%{mfa => PureFun.Knowledge.answer}` map that overrides
       the built-in knowledge base, for libraries it does not cover.
+    * `:roots` - the modules whose functions the caller wants answers
+      for. Everything else in the map is analysed only as far as the
+      roots can reach it, which is what keeps a large build affordable.
+      Defaults to every module in the map.
   """
   @pure_fun true
   @spec analyze(%{module() => [tuple()]}, keyword()) :: %{mfa() => result()}
   def analyze(forms_by_module, opts \\ []) do
     known = Keyword.get(opts, :known, %{})
+    roots = Keyword.get_lazy(opts, :roots, fn -> Map.keys(forms_by_module) end)
 
-    functions =
-      forms_by_module
-      |> Enum.flat_map(fn {module, forms} -> scan_module(module, forms) end)
-      |> Map.new()
-
-    analyzed = MapSet.new(Map.keys(functions))
+    bodies = bodies(forms_by_module)
+    analyzed = MapSet.new(Map.keys(bodies))
     dispatch = dispatch_index(forms_by_module, analyzed)
     context = %{analyzed: analyzed, known: known, dispatch: dispatch}
+    functions = scan_reachable(roots, forms_by_module, bodies, context)
     hofs = settle_hofs(functions, context)
     resolved = resolve_all(functions, context, hofs)
     effects = settle_effects(resolved)
@@ -131,11 +137,49 @@ defmodule PureFun.Analyzer do
   end
 
   def explain({tag, reasons}) when tag in [:impure, :unknown] do
-    {shown, rest} = Enum.split(reasons, @explained_reasons)
+    "#{tag}: " <> Enum.map_join(group(reasons), "; ", &explain_group/1)
+  end
 
-    "#{tag}: " <>
-      Enum.map_join(shown, ", ", &explain_reason/1) <>
-      if rest == [], do: "", else: " (and #{length(rest)} more)"
+  @doc """
+  Reasons grouped by effect class, each origin once.
+
+  The same call reached through two helpers is one thing to fix, not
+  two, so an origin keeps only the first callee it came through.
+
+      iex> PureFun.Analyzer.group([
+      ...>   {:io, {IO, :puts, 1}, {App, :a, 0}},
+      ...>   {:io, {IO, :puts, 1}, {App, :b, 0}},
+      ...>   {:time, {DateTime, :utc_now, 0}, nil}
+      ...> ])
+      [{:io, [{{IO, :puts, 1}, {App, :a, 0}}]}, {:time, [{{DateTime, :utc_now, 0}, nil}]}]
+  """
+  @spec group([reason()]) :: [{Knowledge.category(), [{mfa() | nil, mfa() | nil}]}]
+  def group(reasons) do
+    reasons
+    |> Enum.uniq_by(fn {category, origin, _via} -> {category, origin} end)
+    |> Enum.chunk_by(fn {category, _origin, _via} -> category end)
+    |> Enum.map(fn [{category, _, _} | _] = chunk ->
+      {category, Enum.map(chunk, fn {_category, origin, via} -> {origin, via} end)}
+    end)
+  end
+
+  @doc """
+  Origins as a list, naming a module once for a run of calls into it.
+
+      iex> PureFun.Analyzer.list_origins([{Ecto.Changeset, :cast, 3}, {Ecto.Changeset, :cast, 4}, {IO, :puts, 1}])
+      "Ecto.Changeset.cast/3, cast/4, IO.puts/1"
+  """
+  @spec list_origins([mfa() | nil]) :: String.t()
+  def list_origins(origins) do
+    origins
+    |> Enum.reject(&is_nil/1)
+    |> Enum.chunk_by(fn {module, _function, _arity} -> module end)
+    |> Enum.map_join(", ", fn [{module, function, arity} | rest] ->
+      Enum.map_join([{function, arity} | Enum.map(rest, fn {_m, f, a} -> {f, a} end)], ", ", fn
+        {^function, ^arity} -> "#{name(module)}.#{function}/#{arity}"
+        {f, a} -> "#{f}/#{a}"
+      end)
+    end)
   end
 
   @doc """
@@ -154,10 +198,18 @@ defmodule PureFun.Analyzer do
       String.starts_with?(Atom.to_string(function), @macro_prefix)
   end
 
-  defp explain_reason({category, mfa, via}) do
-    [Knowledge.describe(category), format_mfa(mfa), format_via(via, mfa)]
+  defp explain_group({category, [{origin, via}]}) do
+    [Knowledge.describe(category), format_mfa(origin), format_via(via, origin)]
     |> Enum.reject(&(&1 == ""))
     |> Enum.join(" ")
+  end
+
+  defp explain_group({category, origins}) do
+    {shown, rest} = origins |> Enum.map(&elem(&1, 0)) |> Enum.split(@explained_reasons)
+    more = if rest == [], do: "", else: " and #{length(rest)} more"
+    itself = if nil in shown, do: "directly, ", else: ""
+
+    "#{Knowledge.describe(category)} (#{itself}#{list_origins(shown)}#{more})"
   end
 
   defp format_mfa(nil), do: ""
@@ -171,30 +223,84 @@ defmodule PureFun.Analyzer do
 
   ## Scanning ---------------------------------------------------------------
 
-  defp scan_module(module, forms) do
-    annotated = annotations(forms)
-    module_annotation = module_annotation(forms)
-    exported = exports(forms)
-    imported = imports(forms)
+  defp bodies(forms_by_module) do
+    for {module, forms} <- forms_by_module,
+        {:function, _anno, name, arity, clauses} <- forms,
+        into: %{},
+        do: {{module, name, arity}, clauses}
+  end
 
-    for {:function, _anno, name, arity, clauses} <- forms do
-      scan = Enum.reduce(clauses, empty_scan(), &scan_clause/2)
-      mfa = {module, name, arity}
-      public? = MapSet.member?(exported, {name, arity})
+  # Only what the roots can reach is scanned. A dependency is mostly code
+  # the project never calls, and every function left out here is one the
+  # fixpoint below never has to settle.
+  defp scan_reachable(roots, forms_by_module, bodies, context) do
+    roots = MapSet.new(roots)
 
-      {mfa,
-       %{
-         scan
-         | annotation:
-             annotation_for(
-               Map.get(annotated, {name, arity}),
-               module_annotation,
-               public? and not generated?(mfa)
-             ),
-           exported: public?,
-           imports: imported
-       }}
-    end
+    modules =
+      for {module, forms} <- forms_by_module, into: %{}, do: {module, module_facts(forms)}
+
+    bodies
+    |> Map.keys()
+    |> Enum.filter(fn {module, _name, _arity} -> MapSet.member?(roots, module) end)
+    |> Enum.sort()
+    |> reach(bodies, modules, context, %{})
+  end
+
+  defp reach([], _bodies, _modules, _context, scanned), do: scanned
+
+  defp reach([mfa | rest], bodies, modules, context, scanned) when is_map_key(scanned, mfa) do
+    reach(rest, bodies, modules, context, scanned)
+  end
+
+  defp reach([{module, _name, _arity} = mfa | rest], bodies, modules, context, scanned) do
+    scan = scan_function(mfa, Map.fetch!(bodies, mfa), Map.fetch!(modules, module))
+    next = successors(mfa, scan, context) ++ rest
+
+    reach(next, bodies, modules, context, Map.put(scanned, mfa, scan))
+  end
+
+  # Every analysed function a call can land on, whatever the arguments
+  # turn out to narrow it to later.
+  defp successors({module, _name, _arity}, scan, context) do
+    Enum.flat_map(scan.calls, fn
+      {_kind, {:callback, function, arity}, _shapes} ->
+        Map.get(context.dispatch.callbacks, {function, arity}, [])
+
+      {_kind, target, _shapes} ->
+        mfa = target_mfa(target, module, scan.imports, context.analyzed)
+
+        case classify(mfa, context) do
+          {:dispatch, targets} -> targets
+          :analyzed -> [mfa]
+          _answer -> []
+        end
+    end)
+  end
+
+  defp module_facts(forms) do
+    %{
+      annotated: annotations(forms),
+      annotation: module_annotation(forms),
+      exported: exports(forms),
+      imported: imports(forms)
+    }
+  end
+
+  defp scan_function({_module, name, arity} = mfa, clauses, facts) do
+    scan = Enum.reduce(clauses, empty_scan(), &scan_clause/2)
+    public? = MapSet.member?(facts.exported, {name, arity})
+
+    %{
+      scan
+      | annotation:
+          annotation_for(
+            Map.get(facts.annotated, {name, arity}),
+            facts.annotation,
+            public? and not generated?(mfa)
+          ),
+        exported: public?,
+        imports: facts.imported
+    }
   end
 
   # A module-wide annotation covers the module's public interface: every
@@ -770,58 +876,163 @@ defmodule PureFun.Analyzer do
 
   ## Fixpoint ---------------------------------------------------------------
 
+  # Effects flow backwards along the call graph. Every function in a
+  # cycle reaches every other one, so each strongly connected component
+  # is settled once, as a whole, after everything it calls. That visits
+  # each call edge once, where iterating until nothing changes copied a
+  # callee's whole effect set on every revisit and took hours on a large
+  # build.
+  #
+  # Effects are kept as `{category, origin}` while they flow, with an
+  # origin of `nil` replaced by the function that has the effect. Which
+  # callee an effect came in through is worked out afterwards, per
+  # function, from the direct callees alone.
   defp settle_effects(resolved) do
-    callers =
-      Enum.reduce(resolved, %{}, fn {mfa, function}, callers ->
-        Enum.reduce(function.deps, callers, fn dep, callers ->
-          Map.update(callers, dep, [mfa], &[mfa | &1])
-        end)
-      end)
+    own = Map.new(resolved, fn {mfa, function} -> {mfa, absolute(function.effects, mfa)} end)
 
-    effects = Map.new(resolved, fn {mfa, function} -> {mfa, function.effects} end)
-    propagate(:queue.from_list(Map.keys(resolved)), effects, resolved, callers)
+    reachable =
+      resolved
+      |> components()
+      |> Enum.reduce(%{}, &settle_component(&1, own, resolved, &2))
+
+    Map.new(resolved, fn {mfa, function} ->
+      {mfa, reasons(mfa, function, own, reachable)}
+    end)
   end
 
-  defp propagate(queue, effects, resolved, callers) do
-    case :queue.out(queue) do
-      {:empty, _} ->
-        effects
+  defp absolute(effects, mfa) do
+    MapSet.new(effects, fn {category, origin, _via} -> {category, origin || mfa} end)
+  end
 
-      {{:value, mfa}, queue} ->
-        current = Map.fetch!(effects, mfa)
+  defp settle_component(members, own, resolved, reachable) do
+    inside = MapSet.new(members)
 
-        merged =
-          Enum.reduce(resolved[mfa].deps, current, fn dep, acc ->
-            MapSet.union(acc, inherited(effects, dep))
-          end)
+    mine = members |> Enum.map(&Map.fetch!(own, &1)) |> Enum.reduce(MapSet.new(), &MapSet.union/2)
 
-        if MapSet.equal?(merged, current) do
-          propagate(queue, effects, resolved, callers)
-        else
-          queue = Enum.reduce(Map.get(callers, mfa, []), queue, &:queue.in(&1, &2))
-          propagate(queue, Map.put(effects, mfa, merged), resolved, callers)
+    inherited =
+      for member <- members,
+          dep <- Map.fetch!(resolved, member).deps,
+          not MapSet.member?(inside, dep),
+          effect <- Map.get(reachable, dep, []),
+          into: MapSet.new(),
+          do: effect
+
+    effects = keep(mine, inherited)
+    Enum.reduce(members, reachable, &Map.put(&2, &1, effects))
+  end
+
+  # A function deep in a dependency can reach hundreds of unknowns, and
+  # carrying every one of them into every caller is what made large
+  # builds slow. A function's own effects are always kept; beyond those,
+  # each class keeps its first @kept_per_class origins. The class itself
+  # is never lost, and the class is what an annotation is checked on.
+  defp keep(mine, inherited) do
+    counts = Enum.frequencies_by(mine, fn {category, _origin} -> category end)
+
+    inherited
+    |> Enum.reject(&MapSet.member?(mine, &1))
+    |> Enum.sort()
+    |> Enum.reduce({mine, counts}, fn {category, _origin} = effect, {kept, counts} ->
+      if Map.get(counts, category, 0) < @kept_per_class do
+        {MapSet.put(kept, effect), Map.update(counts, category, 1, &(&1 + 1))}
+      else
+        {kept, counts}
+      end
+    end)
+    |> elem(0)
+  end
+
+  # An effect a function has itself makes the same effect arriving
+  # through a callee redundant noise, so only the rest get a `via`: the
+  # first direct callee that reaches it.
+  defp reasons(mfa, function, own, reachable) do
+    mine = Map.fetch!(own, mfa)
+    callees = function.deps |> MapSet.delete(mfa) |> Enum.sort()
+
+    inherited =
+      for {category, origin} = effect <- Map.fetch!(reachable, mfa),
+          not MapSet.member?(mine, effect),
+          do: {category, origin, Enum.find(callees, &reaches?(reachable, &1, effect))}
+
+    MapSet.to_list(function.effects) ++ inherited
+  end
+
+  defp reaches?(reachable, callee, effect) do
+    reachable |> Map.get(callee, MapSet.new()) |> MapSet.member?(effect)
+  end
+
+  # Tarjan's algorithm. Components come out callees first, which is the
+  # order they have to be settled in.
+  defp components(resolved) do
+    initial = %{index: %{}, low: %{}, stack: [], on_stack: MapSet.new(), components: []}
+
+    resolved
+    |> Map.keys()
+    |> Enum.sort()
+    |> Enum.reduce(initial, fn mfa, state ->
+      if is_map_key(state.index, mfa), do: state, else: connect(mfa, resolved, state)
+    end)
+    |> Map.fetch!(:components)
+    |> Enum.reverse()
+  end
+
+  defp connect(mfa, resolved, state) do
+    number = map_size(state.index)
+
+    state = %{
+      state
+      | index: Map.put(state.index, mfa, number),
+        low: Map.put(state.low, mfa, number),
+        stack: [mfa | state.stack],
+        on_stack: MapSet.put(state.on_stack, mfa)
+    }
+
+    state =
+      resolved
+      |> Map.fetch!(mfa)
+      |> Map.fetch!(:deps)
+      |> Enum.filter(&is_map_key(resolved, &1))
+      |> Enum.reduce(state, fn dep, state ->
+        cond do
+          not is_map_key(state.index, dep) ->
+            state = connect(dep, resolved, state)
+            lower(state, mfa, Map.fetch!(state.low, dep))
+
+          MapSet.member?(state.on_stack, dep) ->
+            lower(state, mfa, Map.fetch!(state.index, dep))
+
+          true ->
+            state
         end
+      end)
+
+    if Map.fetch!(state.low, mfa) == Map.fetch!(state.index, mfa) do
+      pop_component(mfa, state)
+    else
+      state
     end
   end
 
-  defp inherited(effects, dep) do
-    effects
-    |> Map.get(dep, MapSet.new())
-    |> MapSet.new(fn {category, origin, _via} -> {category, origin || dep, dep} end)
+  defp lower(state, mfa, candidate) do
+    %{state | low: Map.update!(state.low, mfa, &min(&1, candidate))}
+  end
+
+  defp pop_component(root, state) do
+    {members, [^root | stack]} = Enum.split_while(state.stack, &(&1 != root))
+    members = [root | members]
+
+    %{
+      state
+      | stack: stack,
+        on_stack: Enum.reduce(members, state.on_stack, &MapSet.delete(&2, &1)),
+        components: [members | state.components]
+    }
   end
 
   ## Verdicts ---------------------------------------------------------------
 
-  # An effect the function has itself makes the same effect arriving
-  # through a callee redundant noise.
   defp present_reasons(effects) do
-    direct = for {category, origin, nil} <- effects, into: MapSet.new(), do: {category, origin}
-
-    effects
-    |> Enum.reject(fn {category, origin, via} ->
-      via != nil and MapSet.member?(direct, {category, origin})
-    end)
-    |> Enum.sort_by(fn {category, origin, _via} ->
+    Enum.sort_by(effects, fn {category, origin, _via} ->
       {Knowledge.lost_trail?(category), category, inspect(origin)}
     end)
   end
