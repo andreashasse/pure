@@ -1,4 +1,4 @@
-defmodule PureTest do
+defmodule PureFunTest do
   use ExUnit.Case, async: true
 
   doctest PureFun
