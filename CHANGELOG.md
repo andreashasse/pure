@@ -11,6 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Static purity analysis of BEAM functions from compiled code, including protocol and behaviour dispatch.
-- `mix pure` task.
-- `@pure` annotations: per-function claims, waivers and module-wide claims.
-- `Pure.Check.Purity`, a Credo check that is only compiled when the host project has Credo.
+- `mix pure_fun` task.
+- `@pure_fun` annotations: per-function claims, waivers and module-wide claims.
+- `PureFun.Check.Purity`, a Credo check that is only compiled when the host project has Credo.

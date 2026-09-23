@@ -1,17 +1,17 @@
-defmodule Pure.Sample.Formatter do
+defmodule PureFun.Sample.Formatter do
   @moduledoc "A behaviour with one pure and one impure implementation."
   @callback format(term()) :: String.t()
 end
 
-defmodule Pure.Sample.PlainFormatter do
-  @behaviour Pure.Sample.Formatter
+defmodule PureFun.Sample.PlainFormatter do
+  @behaviour PureFun.Sample.Formatter
 
   @impl true
   def format(term), do: inspect(term)
 end
 
-defmodule Pure.Sample.LoggingFormatter do
-  @behaviour Pure.Sample.Formatter
+defmodule PureFun.Sample.LoggingFormatter do
+  @behaviour PureFun.Sample.Formatter
 
   @impl true
   def format(term) do
@@ -20,19 +20,19 @@ defmodule Pure.Sample.LoggingFormatter do
   end
 end
 
-defmodule Pure.Sample.Doubler do
+defmodule PureFun.Sample.Doubler do
   @moduledoc "A behaviour whose only implementation is pure."
   @callback double(integer()) :: integer()
 end
 
-defmodule Pure.Sample.TwiceDoubler do
-  @behaviour Pure.Sample.Doubler
+defmodule PureFun.Sample.TwiceDoubler do
+  @behaviour PureFun.Sample.Doubler
 
   @impl true
   def double(x), do: x * 2
 end
 
-defmodule Pure.Sample.BehaviourDispatch do
+defmodule PureFun.Sample.BehaviourDispatch do
   @moduledoc """
   Calls that reach an implementation without naming it.
   """
@@ -45,6 +45,6 @@ defmodule Pure.Sample.BehaviourDispatch do
   # Naming the behaviour itself, the way a protocol call looks. The
   # function only exists on the implementations, which is exactly what
   # makes this a dispatch.
-  @compile {:no_warn_undefined, {Pure.Sample.Formatter, :format, 1}}
-  def through_behaviour(term), do: Pure.Sample.Formatter.format(term)
+  @compile {:no_warn_undefined, {PureFun.Sample.Formatter, :format, 1}}
+  def through_behaviour(term), do: PureFun.Sample.Formatter.format(term)
 end

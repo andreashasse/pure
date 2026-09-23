@@ -14,8 +14,8 @@ defmodule Mix.Tasks.PureTest do
   # call graph, and reading every dependency's beam files for each of them
   # costs more than the rest of the suite put together.
   defp run(argv) do
-    Mix.Task.reenable("pure")
-    Mix.Tasks.Pure.run(["--no-deps" | argv])
+    Mix.Task.reenable("pure_fun")
+    Mix.Tasks.PureFun.run(["--no-deps" | argv])
     drain()
   end
 
@@ -28,15 +28,15 @@ defmodule Mix.Tasks.PureTest do
   end
 
   test "reports the functions of one module" do
-    output = run(["Pure.Sample"])
+    output = run(["PureFun.Sample"])
 
-    assert output =~ "Pure.Sample"
+    assert output =~ "PureFun.Sample"
     assert output =~ "add/2"
     assert output =~ "writes/1"
   end
 
   test "a filter shows pure functions that the default report hides" do
-    assert run(["Pure.Sample.add/2"]) =~ ~r/add\/2\s+pure/
+    assert run(["PureFun.Sample.add/2"]) =~ ~r/add\/2\s+pure/
     refute run([]) =~ "add/2"
   end
 
@@ -45,25 +45,25 @@ defmodule Mix.Tasks.PureTest do
   end
 
   test "a function filter narrows to that function" do
-    output = run(["Pure.Sample.writes/1"])
+    output = run(["PureFun.Sample.writes/1"])
 
     assert output =~ "writes/1"
     refute output =~ "add/2"
   end
 
   test "a filter can leave out the arity" do
-    assert run(["Pure.Sample.guarded"]) =~ "guarded/1"
+    assert run(["PureFun.Sample.guarded"]) =~ "guarded/1"
   end
 
   test "the reason and the callee it came through are reported" do
-    output = run(["Pure.Sample.two_hops/1"])
+    output = run(["PureFun.Sample.two_hops/1"])
 
     assert output =~ "performs I/O (IO.puts/1)"
-    assert output =~ "via Pure.Sample.one_hop/1"
+    assert output =~ "via PureFun.Sample.one_hop/1"
   end
 
   test "higher-order functions are reported as conditional" do
-    assert run(["Pure.Sample.hof/2"]) =~ "pure if the fun given as argument 2 is pure"
+    assert run(["PureFun.Sample.hof/2"]) =~ "pure if the fun given as argument 2 is pure"
   end
 
   test "a filter that matches nothing says so" do
@@ -71,24 +71,24 @@ defmodule Mix.Tasks.PureTest do
   end
 
   test "the summary counts every verdict" do
-    output = run(["--all", "Pure.Sample"])
+    output = run(["--all", "PureFun.Sample"])
 
     assert output =~ ~r/\d+ pure, \d+ conditional, \d+ impure, \d+ unknown \(\d+ functions\)/
   end
 
   test "private functions are left out unless asked for" do
-    refute run(["--all", "Pure.Analyzer"]) =~ "scan_module/2"
-    assert run(["--all", "--private", "Pure.Analyzer"]) =~ "scan_module/2"
+    refute run(["--all", "PureFun.Analyzer"]) =~ "scan_module/2"
+    assert run(["--all", "--private", "PureFun.Analyzer"]) =~ "scan_module/2"
   end
 
   test "--unknown surfaces functions whose purity could not be determined" do
-    assert run(["--unknown", "Pure.Sample"]) =~ "dynamic/2"
+    assert run(["--unknown", "PureFun.Sample"]) =~ "dynamic/2"
   end
 
   test "--check fails when an annotated function is not pure" do
     assert_raise Mix.Error, ~r/annotation\(s\) are not kept/, fn -> run(["--check"]) end
 
-    assert drain() =~ "Pure.Sample.annotated_but_impure/1 is annotated @pure but is impure"
+    assert drain() =~ "PureFun.Sample.annotated_but_impure/1 is annotated @pure_fun but is impure"
   end
 
   test "an unknown switch is rejected" do

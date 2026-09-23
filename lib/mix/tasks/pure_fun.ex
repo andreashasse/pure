@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.Pure do
+defmodule Mix.Tasks.PureFun do
   @shortdoc "Reports which functions are pure"
 
   @moduledoc """
@@ -8,18 +8,18 @@ defmodule Mix.Tasks.Pure do
   reaches an effect through a library is reported as impure rather than
   unknown.
 
-      mix pure                     # summary for every module in the project
-      mix pure MyApp.Core          # every function in one module
-      mix pure MyApp.Core.total/1  # one function, with the reasons
-      mix pure --check             # fail if an annotation is not kept
+      mix pure_fun                     # summary for every module in the project
+      mix pure_fun MyApp.Core          # every function in one module
+      mix pure_fun MyApp.Core.total/1  # one function, with the reasons
+      mix pure_fun --check             # fail if an annotation is not kept
 
   ## Options
 
-    * `--check` - exit non-zero if an annotation is not kept: a `@pure`
+    * `--check` - exit non-zero if an annotation is not kept: a `@pure_fun`
       function that reaches an effect it did not waive, or an annotation
       that is wrong in itself. Waivers nothing needs any more are
       reported without failing anything. This is the CI mode, and
-      `Pure.Check.Purity` is the same thing as a Credo check.
+      `PureFun.Check.Purity` is the same thing as a Credo check.
     * `--all` - list pure functions too, not just the interesting ones.
     * `--no-deps` - do not follow calls into dependencies. Faster, at
       the cost of reporting every call into a library as unknown.
@@ -33,7 +33,7 @@ defmodule Mix.Tasks.Pure do
 
       def project do
         [
-          pure: [
+          pure_fun: [
             known: %{
               {MyLib.Cache, :get, 1} => {:impure, :ets},
               {MyLib.Fold, :run, 2} => {:hof, [2]}
@@ -45,7 +45,7 @@ defmodule Mix.Tasks.Pure do
 
   use Mix.Task
 
-  alias Pure.{Analyzer, Annotation}
+  alias PureFun.{Analyzer, Annotation}
 
   @switches [check: :boolean, all: :boolean, deps: :boolean, unknown: :boolean, private: :boolean]
 
@@ -54,11 +54,11 @@ defmodule Mix.Tasks.Pure do
     {opts, filters} = OptionParser.parse!(argv, strict: @switches)
     Mix.Task.run("compile", [])
 
-    config = Keyword.get(Mix.Project.config(), :pure, [])
+    config = Keyword.get(Mix.Project.config(), :pure_fun, [])
 
     analysis =
-      Pure.analyze(
-        paths: Pure.Beam.build_dirs(deps: Keyword.get(opts, :deps, true)),
+      PureFun.analyze(
+        paths: PureFun.Beam.build_dirs(deps: Keyword.get(opts, :deps, true)),
         known: Keyword.get(config, :known, %{})
       )
 
@@ -113,7 +113,7 @@ defmodule Mix.Tasks.Pure do
   # worth printing when a function has several.
   defp details(%{effects: effects}) when length(effects) > 1 do
     Enum.map(effects, fn {category, mfa, _via} ->
-      "- #{Pure.Knowledge.describe(category)}#{if mfa, do: " (#{format(mfa)})", else: ""}"
+      "- #{PureFun.Knowledge.describe(category)}#{if mfa, do: " (#{format(mfa)})", else: ""}"
     end)
   end
 
@@ -134,12 +134,12 @@ defmodule Mix.Tasks.Pure do
   ## Check mode -------------------------------------------------------------
 
   defp check(analysis) do
-    violations = Pure.violations(analysis)
-    problems = Pure.annotation_problems(analysis)
+    violations = PureFun.violations(analysis)
+    problems = PureFun.annotation_problems(analysis)
 
     # A waiver nothing needs any more only ever makes the check more
     # permissive, so it is said out loud and then let through.
-    Enum.each(Pure.stale_waivers(analysis), fn {mfa, stale} ->
+    Enum.each(PureFun.stale_waivers(analysis), fn {mfa, stale} ->
       Mix.shell().info("#{format(mfa)} waives #{inspect(stale)}, which it does not do")
     end)
 
@@ -148,7 +148,9 @@ defmodule Mix.Tasks.Pure do
     end)
 
     Enum.each(violations, fn {mfa, verdict} ->
-      Mix.shell().error("#{format(mfa)} is annotated @pure but is #{Analyzer.explain(verdict)}")
+      Mix.shell().error(
+        "#{format(mfa)} is annotated @pure_fun but is #{Analyzer.explain(verdict)}"
+      )
     end)
 
     failures = length(violations) + length(problems)
@@ -165,7 +167,7 @@ defmodule Mix.Tasks.Pure do
 
   defp interesting(results, opts, filters) do
     results
-    |> Enum.reject(fn {mfa, _} -> Pure.generated?(mfa) end)
+    |> Enum.reject(fn {mfa, _} -> PureFun.generated?(mfa) end)
     |> Enum.filter(fn {_, result} -> result.exported || opts[:private] end)
     |> Enum.filter(fn {mfa, _} -> matches?(mfa, filters) end)
     |> Enum.filter(fn {_, result} -> show?(result, opts, filters) end)

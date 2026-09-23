@@ -1,9 +1,9 @@
-defmodule Pure.KnowledgeTest do
+defmodule PureFun.KnowledgeTest do
   use ExUnit.Case, async: true
 
-  alias Pure.Knowledge
+  alias PureFun.Knowledge
 
-  doctest Pure.Knowledge
+  doctest PureFun.Knowledge
 
   test "a module default applies to every function in it" do
     assert Knowledge.lookup(File, :read, 1) == {:impure, :file}

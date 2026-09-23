@@ -1,4 +1,4 @@
-defmodule Pure.DispatchTest do
+defmodule PureFun.DispatchTest do
   @moduledoc """
   A call that picks its target at runtime is only as pure as the
   implementations it can reach. A protocol is just a behaviour whose
@@ -8,11 +8,11 @@ defmodule Pure.DispatchTest do
 
   use ExUnit.Case, async: true
 
-  alias Pure.Sample.{BehaviourDispatch, Dispatch, Doubler, Formatter}
-  alias Pure.Sample.{LoggingFormatter, PlainFormatter, TwiceDoubler}
+  alias PureFun.Sample.{BehaviourDispatch, Dispatch, Doubler, Formatter}
+  alias PureFun.Sample.{LoggingFormatter, PlainFormatter, TwiceDoubler}
 
   defp verdict(analysis, module, function, arity) do
-    Pure.verdict(analysis, {module, function, arity})
+    PureFun.verdict(analysis, {module, function, arity})
   end
 
   defp tag(analysis, module, function, arity) do
@@ -33,7 +33,7 @@ defmodule Pure.DispatchTest do
     setup do
       # Only the fixture is asked for; the protocols it dispatches to and
       # their implementations are pulled in by the analysis itself.
-      %{analysis: Pure.analyze(modules: [Dispatch])}
+      %{analysis: PureFun.analyze(modules: [Dispatch])}
     end
 
     test "the implementations are found without being asked for", %{analysis: analysis} do
@@ -41,7 +41,7 @@ defmodule Pure.DispatchTest do
 
       assert Map.has_key?(
                analysis.results,
-               {String.Chars.Pure.Sample.Quiet, :to_string, 1}
+               {String.Chars.PureFun.Sample.Quiet, :to_string, 1}
              )
     end
 
@@ -57,7 +57,7 @@ defmodule Pure.DispatchTest do
       {:impure, reasons} = verdict(analysis, Dispatch, :loud, 1)
 
       assert Enum.any?(reasons, fn {_category, _mfa, via} ->
-               via == {String.Chars.Pure.Sample.Loud, :to_string, 1}
+               via == {String.Chars.PureFun.Sample.Loud, :to_string, 1}
              end)
     end
 
@@ -82,7 +82,7 @@ defmodule Pure.DispatchTest do
     setup do
       %{
         analysis:
-          Pure.analyze(
+          PureFun.analyze(
             modules: [
               BehaviourDispatch,
               Formatter,
@@ -111,7 +111,7 @@ defmodule Pure.DispatchTest do
   describe "when no implementation is known" do
     setup do
       # The implementations are deliberately left out of the analysis.
-      %{analysis: Pure.analyze(modules: [BehaviourDispatch])}
+      %{analysis: PureFun.analyze(modules: [BehaviourDispatch])}
     end
 
     test "a dispatch with nothing to join over is unknown, not pure", %{analysis: analysis} do

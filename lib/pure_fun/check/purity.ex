@@ -1,6 +1,6 @@
 # Only compiled when the project using this library has Credo of its own.
 if Code.ensure_loaded?(Credo.Check) do
-  defmodule Pure.Check.Purity do
+  defmodule PureFun.Check.Purity do
     use Credo.Check,
       id: "PUR0001",
       run_on_all: true,
@@ -9,23 +9,23 @@ if Code.ensure_loaded?(Credo.Check) do
       param_defaults: [known: %{}, follow_deps: true],
       explanations: [
         check: """
-        Functions annotated `@pure` are supposed to compute a return value and
+        Functions annotated `@pure_fun` are supposed to compute a return value and
         nothing else. This check reads the compiled code of the whole project,
         follows every call the annotated function can make, and reports the
         ones that reach an effect after all.
 
             defmodule Payments.Core do
-              use Pure
+              use PureFun
 
-              @pure true
+              @pure_fun true
               def fee(amount, rate), do: round(amount * rate)
 
-              @pure except: [:time]
+              @pure_fun except: [:time]
               def quote(amount), do: {DateTime.utc_now(), fee(amount, 0.03)}
             end
 
         `except:` waives whole classes of effect for one function, and waives
-        them for that function alone: a caller annotated plain `@pure` still
+        them for that function alone: a caller annotated plain `@pure_fun` still
         fails on the clock its callee reads. That is what stops a waiver from
         laundering effects through the rest of the call graph.
 
@@ -33,11 +33,11 @@ if Code.ensure_loaded?(Credo.Check) do
         for a functional core, because a function added to it tomorrow is
         covered the day it lands:
 
-            @pure_module except: [:time]
+            @pure_fun_module except: [:time]
 
         A function inside such a module may narrow what its module waives,
         never widen it. To exempt one function entirely, use Credo's own
-        `# credo:disable-for-next-line Pure.Check.Purity`.
+        `# credo:disable-for-next-line PureFun.Check.Purity`.
 
         The effect classes an annotation may name are the ones the analyser
         reports: `:io`, `:file`, `:network`, `:system`, `:time`, `:random`,
@@ -64,8 +64,8 @@ if Code.ensure_loaded?(Credo.Check) do
           Purity of functions the analyser cannot work out for itself, as a
           `%{{module, function, arity} => answer}` map, where an answer is
           `:pure`, `{:impure, class}` or `{:hof, positions}`. Merged over the
-          `pure: [known: %{...}]` entry in `mix.exs`, which both this check
-          and `mix pure` read.
+          `pure_fun: [known: %{...}]` entry in `mix.exs`, which both this check
+          and `mix pure_fun` read.
           """,
           follow_deps: """
           Follow calls into dependencies. On by default: without it every
@@ -78,7 +78,7 @@ if Code.ensure_loaded?(Credo.Check) do
     alias Credo.Check.Params
     alias Credo.IssueMeta
     alias Credo.SourceFile
-    alias Pure.{Analyzer, Annotation, Beam, Source}
+    alias PureFun.{Analyzer, Annotation, Beam, Source}
 
     @doc false
     @impl true
@@ -102,7 +102,7 @@ if Code.ensure_loaded?(Credo.Check) do
     # graph rather than of a file, so a module reached from forty
     # annotated functions is still read, scanned and settled exactly once.
     defp analyze(params) do
-      Pure.analyze(
+      PureFun.analyze(
         paths: Beam.build_dirs(deps: Params.get(params, :follow_deps, __MODULE__)),
         known: known(params)
       )
@@ -110,7 +110,7 @@ if Code.ensure_loaded?(Credo.Check) do
 
     defp known(params) do
       Mix.Project.config()
-      |> Keyword.get(:pure, [])
+      |> Keyword.get(:pure_fun, [])
       |> Keyword.get(:known, %{})
       |> Map.merge(Params.get(params, :known, __MODULE__))
     end
@@ -197,9 +197,9 @@ if Code.ensure_loaded?(Credo.Check) do
         # once beats calling every waiver below it a widening.
         {:error, problem} ->
           message =
-            "@pure_module on #{inspect(module)} #{Annotation.describe_problem(problem)}"
+            "@pure_fun_module on #{inspect(module)} #{Annotation.describe_problem(problem)}"
 
-          {nil, [issue(issue_meta, message, written.line, "@pure_module")]}
+          {nil, [issue(issue_meta, message, written.line, "@pure_fun_module")]}
       end
     end
 
@@ -310,19 +310,19 @@ if Code.ensure_loaded?(Credo.Check) do
 
         stale ->
           message =
-            "@pure_module on #{inspect(entry.module)} waives #{list(stale)}, " <>
+            "@pure_fun_module on #{inspect(entry.module)} waives #{list(stale)}, " <>
               "which nothing in the module does"
 
-          [advice(issue_meta, message, entry.annotation.line, "@pure_module")]
+          [advice(issue_meta, message, entry.annotation.line, "@pure_fun_module")]
       end
     end
 
     ## Issues --------------------------------------------------------------
 
     defp problem_issue(function, problem, issue_meta, line) do
-      message = "@pure on #{name(function)} #{Annotation.describe_problem(problem)}"
+      message = "@pure_fun on #{name(function)} #{Annotation.describe_problem(problem)}"
 
-      issue(issue_meta, message, line, "@pure")
+      issue(issue_meta, message, line, "@pure_fun")
     end
 
     defp issue(issue_meta, message, line, trigger) do

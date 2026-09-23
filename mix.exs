@@ -1,9 +1,9 @@
-defmodule Pure.MixProject do
+defmodule PureFun.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :pure,
+      app: :pure_fun,
       version: "0.1.0",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -14,16 +14,16 @@ defmodule Pure.MixProject do
       # them means nothing.
       test_coverage: [
         ignore_modules: [
-          ~r/^(Elixir\.)?Pure\.Sample/,
-          ~r/Pure\.Sample/,
+          ~r/^(Elixir\.)?PureFun\.Sample/,
+          ~r/PureFun\.Sample/,
           :pure_sample_erl,
           :pure_module_erl
         ]
       ],
       description: "Static purity analysis for BEAM functions",
       package: package(),
-      name: "Pure",
-      source_url: "https://github.com/andreashasse/pure",
+      name: "PureFun",
+      source_url: "https://github.com/andreashasse/pure_fun",
       docs: [main: "readme", extras: ["README.md", "CHANGELOG.md"]]
     ]
   end
@@ -38,7 +38,7 @@ defmodule Pure.MixProject do
   defp erlc_paths(:test), do: ["test/erlang"]
   defp erlc_paths(_), do: []
 
-  # Credo is optional on purpose: `Pure.Check.Purity` is only compiled
+  # Credo is optional on purpose: `PureFun.Check.Purity` is only compiled
   # when the project using this library has Credo of its own, so a
   # build-time analysis tool everyone is expected to add to their project
   # still drags nothing in.
@@ -52,7 +52,7 @@ defmodule Pure.MixProject do
   defp package do
     [
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => "https://github.com/andreashasse/pure"},
+      links: %{"GitHub" => "https://github.com/andreashasse/pure_fun"},
       files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE.md)
     ]
   end

@@ -1,4 +1,4 @@
-defmodule Pure.Analyzer do
+defmodule PureFun.Analyzer do
   @moduledoc """
   The functional core: Erlang abstract forms in, purity verdicts out.
 
@@ -13,7 +13,7 @@ defmodule Pure.Analyzer do
      `{:literal, type}` or `:opaque`) so higher-order arguments and
      dispatch targets can be resolved later.
   2. **Resolve.** Each call becomes either a dependency on another
-     analysed function, an effect from `Pure.Knowledge`, or an
+     analysed function, an effect from `PureFun.Knowledge`, or an
      `:unknown` effect. Applying an argument makes the function
      higher-order at that position rather than impure; applying anything
      else the analyser cannot see is a `:higher_order` effect.
@@ -32,9 +32,9 @@ defmodule Pure.Analyzer do
   third into either of the others makes the tool lie.
   """
 
-  use Pure
+  use PureFun
 
-  alias Pure.{Annotation, Knowledge}
+  alias PureFun.{Annotation, Knowledge}
 
   @typedoc """
   Why a function is not pure.
@@ -74,10 +74,10 @@ defmodule Pure.Analyzer do
 
   Options:
 
-    * `:known` - a `%{mfa => Pure.Knowledge.answer}` map that overrides
+    * `:known` - a `%{mfa => PureFun.Knowledge.answer}` map that overrides
       the built-in knowledge base, for libraries it does not cover.
   """
-  @pure true
+  @pure_fun true
   @spec analyze(%{module() => [tuple()]}, keyword()) :: %{mfa() => result()}
   def analyze(forms_by_module, opts \\ []) do
     known = Keyword.get(opts, :known, %{})
@@ -112,13 +112,13 @@ defmodule Pure.Analyzer do
   @doc """
   A one-line explanation of a verdict.
 
-      iex> Pure.Analyzer.explain(:pure)
+      iex> PureFun.Analyzer.explain(:pure)
       "pure"
 
-      iex> Pure.Analyzer.explain({:conditional, [2]})
+      iex> PureFun.Analyzer.explain({:conditional, [2]})
       "pure if the fun given as argument 2 is pure"
 
-      iex> Pure.Analyzer.explain({:impure, [{:io, {IO, :puts, 1}, nil}]})
+      iex> PureFun.Analyzer.explain({:impure, [{:io, {IO, :puts, 1}, nil}]})
       "impure: performs I/O (IO.puts/1)"
   """
   @spec explain(verdict()) :: String.t()
@@ -141,13 +141,13 @@ defmodule Pure.Analyzer do
   @doc """
   Whether a function is compiler-generated or compile-time only.
 
-      iex> Pure.Analyzer.generated?({MyApp, :module_info, 0})
+      iex> PureFun.Analyzer.generated?({MyApp, :module_info, 0})
       true
 
-      iex> Pure.Analyzer.generated?({MyApp, :total, 1})
+      iex> PureFun.Analyzer.generated?({MyApp, :total, 1})
       false
   """
-  @pure true
+  @pure_fun true
   @spec generated?(mfa()) :: boolean()
   def generated?({_module, function, arity}) do
     {function, arity} in @generated or
@@ -239,7 +239,7 @@ defmodule Pure.Analyzer do
 
   defp annotations(forms) do
     for {:attribute, _anno, name, value} <- forms,
-        name in [:pure, :pure_annotated],
+        name in [:pure_fun, :pure_fun_annotated],
         entry <- List.wrap(value),
         parsed = annotation_entry(entry),
         parsed != nil,
@@ -259,7 +259,7 @@ defmodule Pure.Analyzer do
   defp annotation_entry(_other), do: nil
 
   defp module_annotation(forms) do
-    declared = for {:attribute, _anno, :pure_module, value} <- forms, do: value
+    declared = for {:attribute, _anno, :pure_fun_module, value} <- forms, do: value
 
     case declared do
       [] -> nil
@@ -268,7 +268,7 @@ defmodule Pure.Analyzer do
   end
 
   # Elixir persists a module attribute wrapped in a list of its values;
-  # an Erlang -pure_module writes the term exactly as given.
+  # an Erlang -pure_fun_module writes the term exactly as given.
   defp module_value([true]), do: true
   defp module_value([[_ | _] = keyword]), do: keyword
   defp module_value(value), do: value

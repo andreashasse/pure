@@ -1,5 +1,5 @@
 %% Fixture for the Erlang side of the analyser: auto-imported BIFs, `!`,
-%% receive, the -pure_annotated attribute and local funs all look
+%% receive, the -pure_fun_annotated attribute and local funs all look
 %% different from what the Elixir compiler emits.
 -module(pure_sample_erl).
 
@@ -10,7 +10,7 @@
 
 -import(lists, [reverse/1]).
 
--pure_annotated([{add, 2}, {sum, 1}, {annotated_impure, 1},
+-pure_fun_annotated([{add, 2}, {sum, 1}, {annotated_impure, 1},
                  {stamped, 1, [time]}]).
 
 add(A, B) ->

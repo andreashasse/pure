@@ -1,15 +1,15 @@
-defmodule Pure.Annotation do
+defmodule PureFun.Annotation do
   @moduledoc """
-  What `@pure` and `@pure_module` claim, and whether a verdict keeps the claim.
+  What `@pure_fun` and `@pure_fun_module` claim, and whether a verdict keeps the claim.
 
   An annotation is a question put to the analysis, never an answer given to
   it. Nothing in this module changes a verdict; it only decides whether a
   verdict satisfies what was written above the function.
 
-      @pure true                  # computes a result and nothing else
-      @pure except: [:time]       # ... except that it reads the clock
+      @pure_fun true                  # computes a result and nothing else
+      @pure_fun except: [:time]       # ... except that it reads the clock
 
-  A waiver is not inherited. A caller annotated plain `@pure` still fails
+  A waiver is not inherited. A caller annotated plain `@pure_fun` still fails
   on the clock its callee reads, which is what stops a waiver from
   laundering effects through the rest of the call graph. Telling the
   analyser something it cannot see is a different job, and `:known` in
@@ -24,16 +24,16 @@ defmodule Pure.Annotation do
   it takes saying so with `except: [:unknown]`.
   """
 
-  # This module cannot annotate itself. `Pure.__on_definition__/6` reads
-  # `@pure` by calling `parse/1` and `describe_problem/1` right here, and
+  # This module cannot annotate itself. `PureFun.__on_definition__/6` reads
+  # `@pure_fun` by calling `parse/1` and `describe_problem/1` right here, and
   # a module still being compiled cannot answer a call.
-  alias Pure.{Analyzer, Knowledge}
+  alias PureFun.{Analyzer, Knowledge}
 
   @typedoc """
   A parsed annotation.
 
   `scope` is `:module` for a function covered by its module's
-  `@pure_module` rather than by an annotation of its own.
+  `@pure_fun_module` rather than by an annotation of its own.
   """
   @type t :: %{
           except: [Knowledge.category()],
@@ -48,18 +48,18 @@ defmodule Pure.Annotation do
           | {:invalid, term()}
 
   @doc """
-  Read the value written after `@pure` or `@pure_module`.
+  Read the value written after `@pure_fun` or `@pure_fun_module`.
 
-      iex> Pure.Annotation.parse(true)
+      iex> PureFun.Annotation.parse(true)
       {:ok, []}
 
-      iex> Pure.Annotation.parse(except: [:time])
+      iex> PureFun.Annotation.parse(except: [:time])
       {:ok, [:time]}
 
-      iex> Pure.Annotation.parse(except: [:tyme])
+      iex> PureFun.Annotation.parse(except: [:tyme])
       {:error, {:unknown_effects, [:tyme]}}
 
-      iex> Pure.Annotation.parse(:yes)
+      iex> PureFun.Annotation.parse(:yes)
       {:error, {:invalid, :yes}}
   """
   @spec parse(term()) :: {:ok, [Knowledge.category()]} | {:error, problem()}
@@ -87,7 +87,7 @@ defmodule Pure.Annotation do
   @doc """
   Build the annotation for one function.
 
-  `within` is the waiver list of the enclosing `@pure_module`, or `nil`
+  `within` is the waiver list of the enclosing `@pure_fun_module`, or `nil`
   when the module carries no annotation. A function may narrow what its
   module waives but not widen it, so anything it adds is recorded as a
   problem rather than quietly granted.
@@ -120,13 +120,13 @@ defmodule Pure.Annotation do
   The waived classes are dropped from the reasons; what is left, if
   anything, is the verdict the annotation failed on.
 
-      iex> Pure.Annotation.check({:impure, [{:time, {DateTime, :utc_now, 0}, nil}]}, [:time])
+      iex> PureFun.Annotation.check({:impure, [{:time, {DateTime, :utc_now, 0}, nil}]}, [:time])
       :ok
 
-      iex> Pure.Annotation.check({:impure, [{:io, {IO, :puts, 1}, nil}]}, [:time])
+      iex> PureFun.Annotation.check({:impure, [{:io, {IO, :puts, 1}, nil}]}, [:time])
       {:violation, {:impure, [{:io, {IO, :puts, 1}, nil}]}}
 
-      iex> Pure.Annotation.check({:conditional, [2]}, [])
+      iex> PureFun.Annotation.check({:conditional, [2]}, [])
       :ok
   """
   @spec check(Analyzer.verdict(), [Knowledge.category()]) ::
@@ -156,7 +156,7 @@ defmodule Pure.Annotation do
   annotation say something untrue about the code, so it is worth pointing
   at even though it can only ever make the check more permissive.
 
-      iex> Pure.Annotation.stale([{:io, {IO, :puts, 1}, nil}], [:io, :time])
+      iex> PureFun.Annotation.stale([{:io, {IO, :puts, 1}, nil}], [:io, :time])
       [:time]
   """
   @spec stale([Analyzer.reason()], [Knowledge.category()]) :: [Knowledge.category()]
@@ -168,25 +168,25 @@ defmodule Pure.Annotation do
   @doc """
   The annotation as it would be written.
 
-      iex> Pure.Annotation.explain(%{except: [], scope: :function, problems: []})
-      "@pure"
+      iex> PureFun.Annotation.explain(%{except: [], scope: :function, problems: []})
+      "@pure_fun"
 
-      iex> Pure.Annotation.explain(%{except: [:time], scope: :module, problems: []})
-      "@pure_module except: [:time]"
+      iex> PureFun.Annotation.explain(%{except: [:time], scope: :module, problems: []})
+      "@pure_fun_module except: [:time]"
   """
   @spec explain(t()) :: String.t()
   def explain(%{except: except, scope: scope}) do
-    name = if scope == :module, do: "@pure_module", else: "@pure"
+    name = if scope == :module, do: "@pure_fun_module", else: "@pure_fun"
     if except == [], do: name, else: "#{name} except: #{inspect(except)}"
   end
 
   @doc """
   A one-line explanation of what is wrong with an annotation.
 
-      iex> Pure.Annotation.describe_problem({:unknown_effects, [:tyme]})
+      iex> PureFun.Annotation.describe_problem({:unknown_effects, [:tyme]})
       "waives :tyme, which is not an effect class"
 
-      iex> Pure.Annotation.describe_problem({:unknown_effects, [:tyme, :aio]})
+      iex> PureFun.Annotation.describe_problem({:unknown_effects, [:tyme, :aio]})
       "waives :tyme, :aio, which are not effect classes"
   """
   @spec describe_problem(problem()) :: String.t()
@@ -199,12 +199,12 @@ defmodule Pure.Annotation do
   end
 
   def describe_problem({:widens, widened}) do
-    "waives #{list(widened)}, which its module's @pure_module does not"
+    "waives #{list(widened)}, which its module's @pure_fun_module does not"
   end
 
   def describe_problem({:invalid, false}) do
     "is set to `false`; waive the effect classes it has, or exempt the " <>
-      "function with a `# credo:disable-for-next-line Pure.Check.Purity` comment"
+      "function with a `# credo:disable-for-next-line PureFun.Check.Purity` comment"
   end
 
   def describe_problem({:invalid, value}) do
@@ -214,22 +214,24 @@ defmodule Pure.Annotation do
   @doc """
   How to name an annotation in a message.
 
-      iex> Pure.Annotation.subject({Payments.Core, :fee, 2})
-      "@pure on Payments.Core.fee/2"
+      iex> PureFun.Annotation.subject({Payments.Core, :fee, 2})
+      "@pure_fun on Payments.Core.fee/2"
 
-      iex> Pure.Annotation.subject(Payments.Core)
-      "@pure_module on Payments.Core"
+      iex> PureFun.Annotation.subject(Payments.Core)
+      "@pure_fun_module on Payments.Core"
   """
   @spec subject(mfa() | module()) :: String.t()
-  def subject({module, function, arity}), do: "@pure on #{inspect(module)}.#{function}/#{arity}"
-  def subject(module) when is_atom(module), do: "@pure_module on #{inspect(module)}"
+  def subject({module, function, arity}),
+    do: "@pure_fun on #{inspect(module)}.#{function}/#{arity}"
+
+  def subject(module) when is_atom(module), do: "@pure_fun_module on #{inspect(module)}"
 
   defp list(atoms), do: Enum.map_join(atoms, ", ", &inspect/1)
 
   @doc """
   The 1-based arities a definition with default arguments produces.
 
-      iex> Pure.Annotation.arities(2, 1)
+      iex> PureFun.Annotation.arities(2, 1)
       [1, 2]
   """
   @spec arities(non_neg_integer(), non_neg_integer()) :: [non_neg_integer()]

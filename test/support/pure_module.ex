@@ -1,25 +1,25 @@
-defmodule Pure.Sample.PureModule do
+defmodule PureFun.Sample.PureModule do
   @moduledoc """
-  Fixture for `@pure_module` — a whole module claimed as a functional
+  Fixture for `@pure_fun_module` — a whole module claimed as a functional
   core, with one waiver covering every function in it.
 
   Compiled only in `:test`, and analysed through the real pipeline.
   """
 
-  use Pure
+  use PureFun
 
-  @pure_module except: [:time]
+  @pure_fun_module except: [:time]
 
   def stamped(x), do: {DateTime.utc_now(), x}
 
   def plain(a, b), do: a + b
 
   # Narrower than the module: allowed, and checked as written.
-  @pure true
+  @pure_fun true
   def narrowed(a, b), do: a - b
 
   # Wider than the module: the widening is the finding, not the effect.
-  @pure except: [:io]
+  @pure_fun except: [:io]
   def widened(x), do: shout(x)
 
   # Covered by the module, and writing where the module allows only the
@@ -36,9 +36,9 @@ defmodule Pure.Sample.PureModule do
     waiver has nothing to do with it.
     """
 
-    use Pure
+    use PureFun
 
-    @pure_module true
+    @pure_fun_module true
 
     def double(x), do: x * 2
 
