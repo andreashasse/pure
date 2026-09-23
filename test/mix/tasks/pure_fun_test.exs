@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.PureTest do
+defmodule Mix.Tasks.PureFunTest do
   # Mix.shell/1 is global state, so these cannot run alongside anything
   # else that reports through it.
   use ExUnit.Case, async: false
@@ -19,13 +19,18 @@ defmodule Mix.Tasks.PureTest do
     drain()
   end
 
+  # The task colours its verdicts when ANSI is on, which it is in a
+  # terminal and is not in CI, so the escapes are dropped here rather
+  # than written into every assertion.
   defp drain(lines \\ []) do
     receive do
       {:mix_shell, _kind, [line]} -> drain([line | lines])
     after
-      0 -> lines |> Enum.reverse() |> Enum.join("\n")
+      0 -> lines |> Enum.reverse() |> Enum.join("\n") |> strip_ansi()
     end
   end
+
+  defp strip_ansi(text), do: String.replace(text, ~r/\e\[[0-9;]*m/, "")
 
   test "reports the functions of one module" do
     output = run(["PureFun.Sample"])

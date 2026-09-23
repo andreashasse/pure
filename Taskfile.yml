@@ -41,6 +41,7 @@ tasks:
   release:
     desc: Tag, publish to Hex and create a GitHub release
     interactive: true
+    silent: true
     cmds:
       - |
         set -eu
