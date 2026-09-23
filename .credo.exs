@@ -1,7 +1,7 @@
 # This project's own purity check, run over this project.
 #
 # `enabled:` replaces Credo's default set rather than adding to it, which
-# is what is wanted here: the point of this file is to run `mix pure`'s
+# is what is wanted here: the point of this file is to run `mix pure_fun`'s
 # own check against the code that implements it. A project that wants
 # this check alongside Credo's defaults writes `extra:` instead.
 #
@@ -16,7 +16,7 @@
       strict: true,
       checks: %{
         enabled: [
-          {Pure.Check.Purity, []}
+          {PureFun.Check.Purity, []}
         ]
       }
     }

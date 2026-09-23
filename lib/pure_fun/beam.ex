@@ -1,7 +1,7 @@
-defmodule Pure.Beam do
+defmodule PureFun.Beam do
   @moduledoc """
   The imperative shell: turn modules, directories and `.beam` files into
-  abstract forms for `Pure.Analyzer`.
+  abstract forms for `PureFun.Analyzer`.
 
   Both Erlang and Elixir modules work — Elixir's debug info backend hands
   out Erlang abstract format on request, so the analyser only ever sees
@@ -87,7 +87,7 @@ defmodule Pure.Beam do
   Directories holding the compiled beams of the current Mix project.
 
   With `deps: true` the dependencies' `ebin` directories come along,
-  which is what the `mix pure` task does by default: following calls
+  which is what the `mix pure_fun` task does by default: following calls
   into libraries turns unknowns into real answers.
   """
   @spec build_dirs(keyword()) :: [Path.t()]

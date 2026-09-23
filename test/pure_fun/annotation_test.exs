@@ -1,9 +1,9 @@
-defmodule Pure.AnnotationTest do
+defmodule PureFun.AnnotationTest do
   use ExUnit.Case, async: true
 
-  alias Pure.Annotation
+  alias PureFun.Annotation
 
-  doctest Pure.Annotation
+  doctest PureFun.Annotation
 
   describe "parse/1" do
     test "true is a claim with no waivers" do
@@ -109,9 +109,9 @@ defmodule Pure.AnnotationTest do
   end
 
   test "every effect class the analyser can report can be waived and described" do
-    for category <- Pure.Knowledge.categories() do
+    for category <- PureFun.Knowledge.categories() do
       assert Annotation.parse(except: [category]) == {:ok, [category]}
-      assert is_binary(Pure.Knowledge.describe(category))
+      assert is_binary(PureFun.Knowledge.describe(category))
     end
   end
 end

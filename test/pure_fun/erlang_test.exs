@@ -1,14 +1,14 @@
-defmodule Pure.ErlangTest do
+defmodule PureFun.ErlangTest do
   use ExUnit.Case, async: true
 
   @module :pure_sample_erl
 
   setup_all do
-    %{analysis: Pure.analyze(modules: [@module])}
+    %{analysis: PureFun.analyze(modules: [@module])}
   end
 
   defp verdict(%{analysis: analysis}, function, arity) do
-    Pure.verdict(analysis, {@module, function, arity})
+    PureFun.verdict(analysis, {@module, function, arity})
   end
 
   defp reasons(context, function, arity) do
@@ -78,30 +78,30 @@ defmodule Pure.ErlangTest do
   end
 
   test "an -import turns into a call to the imported module" do
-    analysis = Pure.analyze(modules: [:pure_sample_erl])
-    assert Pure.verdict(analysis, {:pure_sample_erl, :imported, 1}) == :pure
+    analysis = PureFun.analyze(modules: [:pure_sample_erl])
+    assert PureFun.verdict(analysis, {:pure_sample_erl, :imported, 1}) == :pure
   end
 
-  test "the -pure_annotated attribute is read", %{analysis: analysis} do
+  test "the -pure_fun_annotated attribute is read", %{analysis: analysis} do
     assert %{annotation: %{except: [], scope: :function}} = analysis.results[{@module, :add, 2}]
     assert %{annotation: nil} = analysis.results[{@module, :hof, 2}]
   end
 
   test "an annotated Erlang function that is not pure is a violation", %{analysis: analysis} do
-    assert [{{@module, :annotated_impure, 1}, {:impure, _}}] = Pure.violations(analysis)
+    assert [{{@module, :annotated_impure, 1}, {:impure, _}}] = PureFun.violations(analysis)
   end
 
   test "a waiver can be written in Erlang too", %{analysis: analysis} do
     assert %{annotation: %{except: [:time], scope: :function}} =
              analysis.results[{@module, :stamped, 1}]
 
-    assert {:impure, [{:time, _, _}]} = Pure.verdict(analysis, {@module, :stamped, 1})
-    refute List.keymember?(Pure.violations(analysis), {@module, :stamped, 1}, 0)
+    assert {:impure, [{:time, _, _}]} = PureFun.verdict(analysis, {@module, :stamped, 1})
+    refute List.keymember?(PureFun.violations(analysis), {@module, :stamped, 1}, 0)
   end
 
-  describe "-pure_module" do
+  describe "-pure_fun_module" do
     setup do
-      %{analysis: Pure.analyze(modules: [:pure_module_erl])}
+      %{analysis: PureFun.analyze(modules: [:pure_module_erl])}
     end
 
     test "covers every exported function", %{analysis: analysis} do
@@ -110,8 +110,10 @@ defmodule Pure.ErlangTest do
     end
 
     test "waives the class it names", %{analysis: analysis} do
-      assert {:impure, [{:time, _, _}]} = Pure.verdict(analysis, {:pure_module_erl, :stamped, 0})
-      assert Pure.violations(analysis) == []
+      assert {:impure, [{:time, _, _}]} =
+               PureFun.verdict(analysis, {:pure_module_erl, :stamped, 0})
+
+      assert PureFun.violations(analysis) == []
     end
   end
 end

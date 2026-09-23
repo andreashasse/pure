@@ -1,10 +1,10 @@
-defmodule Pure.BeamTest do
+defmodule PureFun.BeamTest do
   use ExUnit.Case, async: true
 
-  alias Pure.Beam
+  alias PureFun.Beam
 
   test "loads a module by name" do
-    assert {%{Pure.Sample => forms}, []} = Beam.load([Pure.Sample])
+    assert {%{PureFun.Sample => forms}, []} = Beam.load([PureFun.Sample])
     assert Enum.any?(forms, &match?({:function, _, :add, 2, _}, &1))
   end
 
@@ -16,14 +16,14 @@ defmodule Pure.BeamTest do
   test "loads every beam in a directory" do
     {forms, _skipped} = Beam.load([Mix.Project.compile_path()])
 
-    assert Map.has_key?(forms, Pure.Analyzer)
-    assert Map.has_key?(forms, Pure.Sample)
+    assert Map.has_key?(forms, PureFun.Analyzer)
+    assert Map.has_key?(forms, PureFun.Sample)
   end
 
   test "loads a single beam file by path" do
-    path = Path.join(Mix.Project.compile_path(), "Elixir.Pure.Sample.beam")
+    path = Path.join(Mix.Project.compile_path(), "Elixir.PureFun.Sample.beam")
 
-    assert {%{Pure.Sample => _}, []} = Beam.load([path])
+    assert {%{PureFun.Sample => _}, []} = Beam.load([path])
   end
 
   test "ignores paths that are not beams" do
@@ -39,13 +39,13 @@ defmodule Pure.BeamTest do
   end
 
   test "the same target twice is loaded once" do
-    assert {forms, []} = Beam.load([Pure.Sample, Pure.Sample])
+    assert {forms, []} = Beam.load([PureFun.Sample, PureFun.Sample])
     assert map_size(forms) == 1
   end
 
   test "failures do not stop the rest from loading" do
-    assert {forms, [{NoSuchModule, :not_found}]} = Beam.load([NoSuchModule, Pure.Sample])
-    assert Map.has_key?(forms, Pure.Sample)
+    assert {forms, [{NoSuchModule, :not_found}]} = Beam.load([NoSuchModule, PureFun.Sample])
+    assert Map.has_key?(forms, PureFun.Sample)
   end
 
   @tag :tmp_dir
@@ -90,6 +90,6 @@ defmodule Pure.BeamTest do
     dirs = Beam.build_dirs(deps: true)
 
     assert Enum.all?(dirs, &File.dir?/1)
-    assert Enum.any?(dirs, &(Path.basename(Path.dirname(&1)) == "pure"))
+    assert Enum.any?(dirs, &(Path.basename(Path.dirname(&1)) == "pure_fun"))
   end
 end

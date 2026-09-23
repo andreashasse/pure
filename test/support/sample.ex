@@ -1,4 +1,4 @@
-defmodule Pure.Sample do
+defmodule PureFun.Sample do
   @moduledoc """
   Fixture covering the cases the analyser is supposed to get right.
 
@@ -7,11 +7,11 @@ defmodule Pure.Sample do
   actually run.
   """
 
-  use Pure
+  use PureFun
 
   ## Plainly pure
 
-  @pure true
+  @pure_fun true
   def add(a, b), do: a + b
 
   def double_all(list), do: Enum.map(list, fn x -> x * 2 end)
@@ -43,7 +43,7 @@ defmodule Pure.Sample do
 
   ## Plainly impure
 
-  @pure true
+  @pure_fun true
   def annotated_but_impure(x), do: IO.puts(x)
 
   def writes(x), do: IO.puts(x)

@@ -1,12 +1,12 @@
-defmodule Pure.Check.PurityTest do
+defmodule PureFun.Check.PurityTest do
   use Credo.Test.Case
 
-  alias Pure.Check.Purity
+  alias PureFun.Check.Purity
 
   # Real files, because the check answers from compiled code: these are
   # both on disk and in the test build, the way a user's modules are.
   @waivers "test/support/waivers.ex"
-  @pure_module "test/support/pure_module.ex"
+  @pure_fun_module "test/support/pure_module.ex"
 
   # Following calls into dependencies is the right default for a project
   # and pointless here: nothing the fixtures call lives in one.
@@ -31,11 +31,11 @@ defmodule Pure.Check.PurityTest do
 
   describe "a file with nothing to say" do
     test "is left alone" do
-      assert check("lib/pure/knowledge.ex") == []
+      assert check("lib/pure_fun/knowledge.ex") == []
     end
   end
 
-  describe "@pure except: [...]" do
+  describe "@pure_fun except: [...]" do
     setup do
       %{issues: check(@waivers)}
     end
@@ -48,15 +48,15 @@ defmodule Pure.Check.PurityTest do
       assert [issue] = about(issues, "still_writes/1 is")
 
       assert issue.message ==
-               "still_writes/1 is annotated @pure except: [:time] but is impure: " <>
+               "still_writes/1 is annotated @pure_fun except: [:time] but is impure: " <>
                  "performs I/O (IO.puts/1)"
     end
 
     test "a waiver is not inherited by the caller", %{issues: issues} do
       assert [issue] = about(issues, "calls_a_waived_function/1")
 
-      assert issue.message =~ "is annotated @pure but is impure: reads the clock"
-      assert issue.message =~ "via Pure.Sample.Waivers.stamped/1"
+      assert issue.message =~ "is annotated @pure_fun but is impure: reads the clock"
+      assert issue.message =~ "via PureFun.Sample.Waivers.stamped/1"
     end
 
     test "a higher-order function keeps the claim", %{issues: issues} do
@@ -105,17 +105,17 @@ defmodule Pure.Check.PurityTest do
     end
   end
 
-  describe "@pure_module" do
+  describe "@pure_fun_module" do
     setup do
-      %{issues: check(@pure_module)}
+      %{issues: check(@pure_fun_module)}
     end
 
     test "covers a public function that never mentioned purity", %{issues: issues} do
       assert [issue] = about(issues, "writes/1")
 
       assert issue.message ==
-               "writes/1 is covered by @pure_module except: [:time] but is impure: " <>
-                 "performs I/O (IO.puts/1) via Pure.Sample.PureModule.shout/1"
+               "writes/1 is covered by @pure_fun_module except: [:time] but is impure: " <>
+                 "performs I/O (IO.puts/1) via PureFun.Sample.PureModule.shout/1"
     end
 
     test "waives the same class for every function it covers", %{issues: issues} do
@@ -132,40 +132,40 @@ defmodule Pure.Check.PurityTest do
     end
 
     test "does not let a function widen it", %{issues: issues} do
-      assert [issue] = about(issues, "@pure on widened/1")
+      assert [issue] = about(issues, "@pure_fun on widened/1")
 
       assert issue.message ==
-               "@pure on widened/1 waives :io, which its module's @pure_module does not"
+               "@pure_fun on widened/1 waives :io, which its module's @pure_fun_module does not"
     end
 
     test "a nested module does not inherit the waiver it is written inside", %{issues: issues} do
       assert [issue] = about(issues, "now_and_then/1")
 
       assert issue.message ==
-               "now_and_then/1 is covered by @pure_module but is impure: " <>
+               "now_and_then/1 is covered by @pure_fun_module but is impure: " <>
                  "reads the clock (DateTime.utc_now/0)"
     end
 
     test "a waiver used by one function is not stale for the rest", %{issues: issues} do
-      assert about(issues, "@pure_module on Pure.Sample.PureModule waives") == []
+      assert about(issues, "@pure_fun_module on PureFun.Sample.PureModule waives") == []
     end
 
     test "a module waiver nothing needs is reported once, against the module" do
       issues =
         check_source(
           """
-          defmodule Pure.Sample.PureModule do
-            @pure_module except: [:network]
+          defmodule PureFun.Sample.PureModule do
+            @pure_fun_module except: [:network]
             def plain(a, b), do: a + b
           end
           """,
-          @pure_module
+          @pure_fun_module
         )
 
-      assert [issue] = about(issues, "@pure_module")
+      assert [issue] = about(issues, "@pure_fun_module")
 
       assert issue.message ==
-               "@pure_module on Pure.Sample.PureModule waives :network, " <>
+               "@pure_fun_module on PureFun.Sample.PureModule waives :network, " <>
                  "which nothing in the module does"
 
       assert issue.exit_status == 0
@@ -174,40 +174,40 @@ defmodule Pure.Check.PurityTest do
 
   describe "an annotation that is wrong in itself" do
     test "a misspelt effect class is named" do
-      assert [issue] = problems("@pure except: [:tyme]")
+      assert [issue] = problems("@pure_fun except: [:tyme]")
 
-      assert issue.message == "@pure on fee/1 waives :tyme, which is not an effect class"
+      assert issue.message == "@pure_fun on fee/1 waives :tyme, which is not an effect class"
     end
 
-    test "@pure false says what to do instead" do
-      assert [issue] = problems("@pure false")
+    test "@pure_fun false says what to do instead" do
+      assert [issue] = problems("@pure_fun false")
 
       assert issue.message =~ "is set to `false`"
-      assert issue.message =~ "credo:disable-for-next-line Pure.Check.Purity"
+      assert issue.message =~ "credo:disable-for-next-line PureFun.Check.Purity"
     end
 
     test "any other value is rejected" do
-      assert [issue] = problems("@pure allow: [:time]")
+      assert [issue] = problems("@pure_fun allow: [:time]")
 
       assert issue.message =~ "is set to `[allow: [:time]]`"
       assert issue.message =~ "neither `true` nor `except: [...]`"
     end
 
     test "it fails the build like any other finding" do
-      assert [issue] = problems("@pure except: [:tyme]")
+      assert [issue] = problems("@pure_fun except: [:tyme]")
 
       assert issue.exit_status > 0
     end
 
     defp problems(annotation) do
       """
-      defmodule Pure.Sample.PureModule do
+      defmodule PureFun.Sample.PureModule do
         #{annotation}
         def fee(x), do: x
       end
       """
-      |> check_source(@pure_module)
-      |> about("@pure on")
+      |> check_source(@pure_fun_module)
+      |> about("@pure_fun on")
     end
   end
 
@@ -216,8 +216,8 @@ defmodule Pure.Check.PurityTest do
       issues =
         check_source(
           """
-          defmodule Pure.Sample.NeverCompiled do
-            @pure true
+          defmodule PureFun.Sample.NeverCompiled do
+            @pure_fun true
             def fee(x), do: x
           end
           """,
@@ -225,7 +225,7 @@ defmodule Pure.Check.PurityTest do
         )
 
       assert [issue] = issues
-      assert issue.message =~ "Pure.Sample.NeverCompiled claims purity"
+      assert issue.message =~ "PureFun.Sample.NeverCompiled claims purity"
       assert issue.message =~ "run mix compile"
       assert issue.exit_status > 0
     end
@@ -234,8 +234,8 @@ defmodule Pure.Check.PurityTest do
       issues =
         check_source(
           """
-          defmodule Pure.Sample.NeverCompiled do
-            @pure except: [:tyme]
+          defmodule PureFun.Sample.NeverCompiled do
+            @pure_fun except: [:tyme]
             def fee(x), do: x
           end
           """,
@@ -253,7 +253,7 @@ defmodule Pure.Check.PurityTest do
       File.write!(path, File.read!(@waivers))
 
       assert [issue] = check(path)
-      assert issue.message =~ "Pure.Sample.Waivers has changed since it was last compiled"
+      assert issue.message =~ "PureFun.Sample.Waivers has changed since it was last compiled"
       assert issue.exit_status > 0
     end
   end
@@ -261,8 +261,8 @@ defmodule Pure.Check.PurityTest do
   describe "configuration" do
     test "the known map can be extended from .credo.exs" do
       source = """
-      defmodule Pure.Sample.Waivers do
-        @pure true
+      defmodule PureFun.Sample.Waivers do
+        @pure_fun true
         def unknowable(path), do: :zip.list_dir(path)
       end
       """
@@ -270,7 +270,7 @@ defmodule Pure.Check.PurityTest do
       assert [issue] = check_source(source, @waivers)
 
       assert issue.message ==
-               "unknowable/1 is annotated @pure but is unknown: calls a function the " <>
+               "unknowable/1 is annotated @pure_fun but is unknown: calls a function the " <>
                  "analyser knows nothing about (:zip.list_dir/1)"
 
       assert check_source(source, @waivers, known: %{{:zip, :list_dir, 1} => :pure}) == []
