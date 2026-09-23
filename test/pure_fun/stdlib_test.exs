@@ -1,4 +1,4 @@
-defmodule Pure.StdlibTest do
+defmodule PureFun.StdlibTest do
   @moduledoc """
   Runs the analyser over Elixir's own standard library and compiler.
 
@@ -14,12 +14,12 @@ defmodule Pure.StdlibTest do
 
   setup_all do
     ebin = :elixir |> :code.lib_dir() |> Path.join("ebin")
-    %{analysis: Pure.analyze(paths: [ebin])}
+    %{analysis: PureFun.analyze(paths: [ebin])}
   end
 
   defp verdicts(%{analysis: analysis}) do
     analysis.results
-    |> Enum.reject(fn {mfa, _result} -> Pure.generated?(mfa) end)
+    |> Enum.reject(fn {mfa, _result} -> PureFun.generated?(mfa) end)
     |> Enum.frequencies_by(fn
       {_mfa, %{verdict: :pure}} -> :pure
       {_mfa, %{verdict: {tag, _}}} -> tag
@@ -52,8 +52,8 @@ defmodule Pure.StdlibTest do
   test "known answers are not contradicted by the code that was read", context do
     # These have entries in the knowledge base, which has to win over
     # whatever their Erlang source appears to do.
-    assert Pure.verdict(context.analysis, {String, :upcase, 1}) == :pure
-    assert Pure.verdict(context.analysis, {Enum, :map, 2}) == {:conditional, [2]}
-    assert {:impure, _} = Pure.verdict(context.analysis, {File, :read, 1})
+    assert PureFun.verdict(context.analysis, {String, :upcase, 1}) == :pure
+    assert PureFun.verdict(context.analysis, {Enum, :map, 2}) == {:conditional, [2]}
+    assert {:impure, _} = PureFun.verdict(context.analysis, {File, :read, 1})
   end
 end

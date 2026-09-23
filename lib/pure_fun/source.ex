@@ -1,8 +1,8 @@
-defmodule Pure.Source do
+defmodule PureFun.Source do
   @moduledoc """
   Where the annotations are, as opposed to what they mean.
 
-  `Pure.Analyzer` reads `@pure` out of a beam file, which is the whole
+  `PureFun.Analyzer` reads `@pure_fun` out of a beam file, which is the whole
   truth about what was compiled but says nothing about where it was
   written. A linter needs the other half: the module, the function and
   the line the annotation sits on, straight from the source.
@@ -13,14 +13,14 @@ defmodule Pure.Source do
 
   What is written in the source and what reaches the beam are not always
   the same thing: a `def` produced by a macro has no annotation to find
-  here, so `mix pure --check` stays the way to cover those.
+  here, so `mix pure_fun --check` stays the way to cover those.
   """
 
-  use Pure
+  use PureFun
 
-  alias Pure.Annotation
+  alias PureFun.Annotation
 
-  @pure_module true
+  @pure_fun_module true
 
   @typedoc "An annotation as written, before anything has been made of its value."
   @type written :: %{value: term(), line: pos_integer()}
@@ -50,11 +50,11 @@ defmodule Pure.Source do
 
       iex> {:ok, ast} = Code.string_to_quoted(~s|
       ...>   defmodule Payments.Core do
-      ...>     @pure except: [:time]
+      ...>     @pure_fun except: [:time]
       ...>     def stamp(x), do: {DateTime.utc_now(), x}
       ...>   end
       ...> |)
-      iex> [module] = Pure.Source.annotations(ast)
+      iex> [module] = PureFun.Source.annotations(ast)
       iex> module.module
       Payments.Core
       iex> [function] = module.functions
@@ -123,11 +123,14 @@ defmodule Pure.Source do
     }
   end
 
-  defp statement({:@, meta, [{:pure_module, _anno, [value]}]}, {_annotation, pending, functions}) do
+  defp statement(
+         {:@, meta, [{:pure_fun_module, _anno, [value]}]},
+         {_annotation, pending, functions}
+       ) do
     {written(value, meta), pending, functions}
   end
 
-  defp statement({:@, meta, [{:pure, _anno, [value]}]}, {annotation, _pending, functions}) do
+  defp statement({:@, meta, [{:pure_fun, _anno, [value]}]}, {annotation, _pending, functions}) do
     {annotation, written(value, meta), functions}
   end
 
@@ -143,7 +146,7 @@ defmodule Pure.Source do
   end
 
   # Anything else between an annotation and the definition it belongs to
-  # leaves the annotation standing, the way the compiler does: `@pure`
+  # leaves the annotation standing, the way the compiler does: `@pure_fun`
   # followed by `@doc` still annotates the function underneath both.
   defp statement(_other, acc), do: acc
 

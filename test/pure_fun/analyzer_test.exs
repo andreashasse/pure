@@ -1,14 +1,14 @@
-defmodule Pure.AnalyzerTest do
+defmodule PureFun.AnalyzerTest do
   use ExUnit.Case, async: true
 
-  doctest Pure.Analyzer
+  doctest PureFun.Analyzer
 
   setup_all do
-    %{analysis: Pure.analyze(modules: [Pure.Sample])}
+    %{analysis: PureFun.analyze(modules: [PureFun.Sample])}
   end
 
   defp verdict(%{analysis: analysis}, function, arity) do
-    Pure.verdict(analysis, {Pure.Sample, function, arity})
+    PureFun.verdict(analysis, {PureFun.Sample, function, arity})
   end
 
   defp tag(context, function, arity) do
@@ -104,7 +104,7 @@ defmodule Pure.AnalyzerTest do
 
     test "the direct callee is reported as the way in", context do
       {:impure, [{_, _, via}]} = verdict(context, :two_hops, 1)
-      assert via == {Pure.Sample, :one_hop, 1}
+      assert via == {PureFun.Sample, :one_hop, 1}
     end
 
     test "an impure function captured into a pure higher-order function", context do
@@ -186,7 +186,7 @@ defmodule Pure.AnalyzerTest do
 
     test "string interpolation is a String.Chars dispatch", context do
       # This project defines an impure implementation of String.Chars
-      # (Pure.Sample.Loud), and interpolating an unknown term can reach
+      # (PureFun.Sample.Loud), and interpolating an unknown term can reach
       # any implementation, so it can reach that one.
       assert {:io, {IO, :puts, 1}} in reasons(context, :interpolates, 1)
     end
@@ -219,14 +219,14 @@ defmodule Pure.AnalyzerTest do
 
   describe "explain/1" do
     test "several higher-order positions read as a list" do
-      assert Pure.Analyzer.explain({:conditional, [2, 3]}) ==
+      assert PureFun.Analyzer.explain({:conditional, [2, 3]}) ==
                "pure if the funs given as argument 2 and 3 are pure"
     end
 
     test "a long list of reasons is cut short" do
       reasons = for n <- 1..6, do: {:io, {IO, :puts, n}, nil}
 
-      explanation = Pure.Analyzer.explain({:impure, reasons})
+      explanation = PureFun.Analyzer.explain({:impure, reasons})
 
       assert explanation =~ "(and 3 more)"
       refute explanation =~ "IO.puts/4"
@@ -235,23 +235,23 @@ defmodule Pure.AnalyzerTest do
     test "an effect reached through a callee names both" do
       reason = {:io, {IO, :puts, 1}, {App, :log, 1}}
 
-      assert Pure.Analyzer.explain({:impure, [reason]}) ==
+      assert PureFun.Analyzer.explain({:impure, [reason]}) ==
                "impure: performs I/O (IO.puts/1) via App.log/1"
     end
   end
 
   describe "annotations" do
-    test "@pure true is carried through to the result", context do
+    test "@pure_fun true is carried through to the result", context do
       assert %{annotation: %{except: [], scope: :function, problems: []}} =
-               context.analysis.results[{Pure.Sample, :add, 2}]
+               context.analysis.results[{PureFun.Sample, :add, 2}]
 
-      assert %{annotation: nil} = context.analysis.results[{Pure.Sample, :writes, 1}]
+      assert %{annotation: nil} = context.analysis.results[{PureFun.Sample, :writes, 1}]
     end
 
     test "an annotated function that is not pure is a violation", context do
-      assert Pure.violations(context.analysis) ==
+      assert PureFun.violations(context.analysis) ==
                [
-                 {{Pure.Sample, :annotated_but_impure, 1},
+                 {{PureFun.Sample, :annotated_but_impure, 1},
                   {:impure, [{:io, {IO, :puts, 1}, nil}]}}
                ]
     end
@@ -259,7 +259,7 @@ defmodule Pure.AnalyzerTest do
 
   describe "exports" do
     test "public functions are marked exported", context do
-      assert %{exported: true} = context.analysis.results[{Pure.Sample, :add, 2}]
+      assert %{exported: true} = context.analysis.results[{PureFun.Sample, :add, 2}]
     end
   end
 
@@ -276,7 +276,7 @@ defmodule Pure.AnalyzerTest do
     }
 
     assert %{verdict: {:unknown, [{:unknown, {NoSuchLib, :go, 0}, nil}]}} =
-             Pure.Analyzer.analyze(forms)[{Fake, :run, 0}]
+             PureFun.Analyzer.analyze(forms)[{Fake, :run, 0}]
   end
 
   test "the knowledge base can be extended per project" do
@@ -293,6 +293,6 @@ defmodule Pure.AnalyzerTest do
     known = %{{NoSuchLib, :go, 0} => {:impure, :network}}
 
     assert %{verdict: {:impure, [{:network, {NoSuchLib, :go, 0}, nil}]}} =
-             Pure.Analyzer.analyze(forms, known: known)[{Fake, :run, 0}]
+             PureFun.Analyzer.analyze(forms, known: known)[{Fake, :run, 0}]
   end
 end

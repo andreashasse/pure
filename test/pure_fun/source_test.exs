@@ -1,9 +1,9 @@
-defmodule Pure.SourceTest do
+defmodule PureFun.SourceTest do
   use ExUnit.Case, async: true
 
-  alias Pure.Source
+  alias PureFun.Source
 
-  doctest Pure.Source
+  doctest PureFun.Source
 
   defp annotations(source) do
     {:ok, ast} = Code.string_to_quoted(source)
@@ -33,7 +33,7 @@ defmodule Pure.SourceTest do
     [module] =
       annotations("""
       defmodule Payments.Core do
-        @pure true
+        @pure_fun true
         def fee(amount), do: amount
       end
       """)
@@ -48,7 +48,7 @@ defmodule Pure.SourceTest do
     [module] =
       annotations("""
       defmodule Core do
-        @pure_module except: [:time]
+        @pure_fun_module except: [:time]
         def fee(amount), do: amount
       end
       """)
@@ -60,7 +60,7 @@ defmodule Pure.SourceTest do
   test "the annotation belongs to the definition, not to every later one" do
     assert functions("""
            defmodule Core do
-             @pure true
+             @pure_fun true
              def first(x), do: x
              def second(x), do: x
            end
@@ -70,7 +70,7 @@ defmodule Pure.SourceTest do
   test "anything in between leaves the annotation standing" do
     assert functions("""
            defmodule Core do
-             @pure except: [:io]
+             @pure_fun except: [:io]
              @doc "writes"
              @spec log(term()) :: :ok
              def log(x), do: IO.puts(x)
@@ -81,7 +81,7 @@ defmodule Pure.SourceTest do
   test "clauses of one function are one function" do
     assert functions("""
            defmodule Core do
-             @pure true
+             @pure_fun true
              def run(0), do: :zero
              def run(n) when n > 0, do: n
            end
@@ -92,7 +92,7 @@ defmodule Pure.SourceTest do
     assert functions("""
            defmodule Core do
              def run(0), do: :zero
-             @pure true
+             @pure_fun true
              def run(n), do: n
            end
            """) == [{:run, 1, true, true}]
@@ -101,7 +101,7 @@ defmodule Pure.SourceTest do
   test "a default argument is annotated at every arity it produces" do
     assert functions("""
            defmodule Core do
-             @pure true
+             @pure_fun true
              def fee(amount, rate \\\\ 0.03, cap \\\\ nil), do: {amount, rate, cap}
            end
            """) == [
@@ -114,9 +114,9 @@ defmodule Pure.SourceTest do
   test "private functions are told apart from public ones" do
     assert functions("""
            defmodule Core do
-             @pure true
+             @pure_fun true
              def public(x), do: private(x)
-             @pure true
+             @pure_fun true
              defp private(x), do: x
            end
            """) == [{:public, 1, true, true}, {:private, 1, false, true}]
@@ -125,7 +125,7 @@ defmodule Pure.SourceTest do
   test "a delegated function is a function" do
     assert functions("""
            defmodule Core do
-             @pure true
+             @pure_fun true
              defdelegate fee(amount), to: Other
            end
            """) == [{:fee, 1, true, true}]
@@ -134,7 +134,7 @@ defmodule Pure.SourceTest do
   test "a function with no arguments" do
     assert functions("""
            defmodule Core do
-             @pure true
+             @pure_fun true
              def zero, do: 0
            end
            """) == [{:zero, 0, true, true}]
@@ -144,10 +144,10 @@ defmodule Pure.SourceTest do
     modules =
       annotations("""
       defmodule Outer do
-        @pure_module true
+        @pure_fun_module true
 
         defmodule Inner do
-          @pure true
+          @pure_fun true
           def inner(x), do: x
         end
 
@@ -166,7 +166,7 @@ defmodule Pure.SourceTest do
            end
 
            defmodule Loud do
-             @pure true
+             @pure_fun true
              def add(a, b), do: a + b
            end
            """)
@@ -176,7 +176,7 @@ defmodule Pure.SourceTest do
   test "a value that will not parse is still found, so it can be reported" do
     assert functions("""
            defmodule Core do
-             @pure :yes
+             @pure_fun :yes
              def fee(amount), do: amount
            end
            """) == [{:fee, 1, true, :yes}]

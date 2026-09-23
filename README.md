@@ -1,9 +1,9 @@
-# pure
+# pure_fun
 
 A Mix task that tells you which functions have side effects.
 
 ```
-$ mix pure --all
+$ mix pure_fun --all
 
 Payments.Core
   fee/2                           pure
@@ -23,17 +23,17 @@ the function that has it.
 
 ```elixir
 def deps do
-  [{:pure, "~> 0.1", only: [:dev, :test], runtime: false}]
+  [{:pure_fun, "~> 0.1", only: [:dev, :test], runtime: false}]
 end
 ```
 
 ## Use
 
 ```bash
-mix pure                     # every module in the project
-mix pure Payments.Core       # one module
-mix pure Payments.Core.fee/2 # one function
-mix pure --check             # fail the build if a @pure function is not pure
+mix pure_fun                     # every module in the project
+mix pure_fun Payments.Core       # one module
+mix pure_fun Payments.Core.fee/2 # one function
+mix pure_fun --check             # fail the build if a @pure_fun function is not pure
 ```
 
 | Option | Effect |
@@ -73,25 +73,25 @@ That fourth verdict is the point. Folding "cannot tell" into either
 
 ```elixir
 defmodule Payments.Core do
-  use Pure
+  use PureFun
 
-  @pure true
+  @pure_fun true
   def fee(amount, rate), do: round(amount * rate)
 end
 ```
 
-`mix pure --check` now fails if `fee/2` ever grows an effect — a
+`mix pure_fun --check` now fails if `fee/2` ever grows an effect — a
 functional core that stays a functional core.
 
 A function that owns up to one kind of effect says which:
 
 ```elixir
-@pure except: [:time]
+@pure_fun except: [:time]
 def quote(amount), do: {DateTime.utc_now(), fee(amount, 0.03)}
 ```
 
 The waiver belongs to `quote/1` and to nothing else. A caller annotated
-plain `@pure` still fails on the clock its callee reads, which is what
+plain `@pure_fun` still fails on the clock its callee reads, which is what
 stops a waiver from laundering effects through the rest of the call
 graph. Telling the analyser about code it cannot see is a different job,
 and `:known` below is where that lives.
@@ -102,9 +102,9 @@ lands.
 
 ```elixir
 defmodule Payments.Core do
-  use Pure
+  use PureFun
 
-  @pure_module except: [:time]
+  @pure_fun_module except: [:time]
 
   def fee(amount, rate), do: round(amount * rate)
 end
@@ -113,7 +113,7 @@ end
 A module-wide claim covers every public function and no private one. A
 function inside it may narrow what its module waives, never widen it. To
 exempt one function entirely, use Credo's own
-`# credo:disable-for-next-line Pure.Check.Purity`.
+`# credo:disable-for-next-line PureFun.Check.Purity`.
 
 The classes an annotation may name are the ones the analyser reports:
 `:io`, `:file`, `:network`, `:system`, `:time`, `:random`, `:process`,
@@ -133,8 +133,8 @@ waiving it takes saying `except: [:unknown]`.
 In Erlang:
 
 ```erlang
--pure_annotated([{fee, 2}, {quote, 1, [time]}]).
--pure_module([{except, [time]}]).
+-pure_fun_annotated([{fee, 2}, {quote, 1, [time]}]).
+-pure_fun_module([{except, [time]}]).
 ```
 
 ## As a Credo check
@@ -148,21 +148,21 @@ Credo issues, on the line the annotation sits on:
   configs: [
     %{
       name: "default",
-      checks: %{extra: [{Pure.Check.Purity, []}]}
+      checks: %{extra: [{PureFun.Check.Purity, []}]}
     }
   ]
 }
 ```
 
 ```
-┃ [W] ↗ charge/2 is annotated @pure but is impure: performs I/O
+┃ [W] ↗ charge/2 is annotated @pure_fun but is impure: performs I/O
 ┃       (IO.puts/1) via Payments.Core.log/1
 ┃       lib/payments/core.ex:24:7 #(Payments.Core.charge)
 ```
 
 Credo has to be a dependency of your project for the check to exist:
 this library declares it as optional, so without it the check is not
-compiled at all and `pure` still brings nothing with it.
+compiled at all and `pure_fun` still brings nothing with it.
 
 ```elixir
 {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
@@ -187,7 +187,7 @@ compiled code, which has three consequences worth knowing:
   A project with no annotations at all pays nothing: the check looks for
   them first and stops there.
 - **A `def` written by a macro has no annotation in the source to
-  find.** `mix pure --check` reads the compiled attribute instead, and
+  find.** `mix pure_fun --check` reads the compiled attribute instead, and
   stays the way to cover those, along with Erlang modules.
 
 A waiver that has outlived the effect it was written for is reported
@@ -203,7 +203,7 @@ the analyser, say so in `mix.exs`:
 ```elixir
 def project do
   [
-    pure: [
+    pure_fun: [
       known: %{
         {MyLib.Cache, :get, 1} => {:impure, :ets},
         {MyLib.Money, :add, 2} => :pure,
@@ -267,7 +267,7 @@ implementations.
 
 Leaves of the call graph are BIFs and NIFs whose abstract code shows
 nothing — `:ets.insert/2` compiles to `erlang:nif_error(undef)`, and
-believing that would report it as pure. `Pure.Knowledge` is the
+believing that would report it as pure. `PureFun.Knowledge` is the
 hand-maintained table that stops the analysis from bottoming out in a
 lie, and it always wins over what the code appears to do.
 
@@ -296,7 +296,7 @@ lie, and it always wins over what the code appears to do.
 ```bash
 mix test
 mix test --cover
-mix pure --all   # it analyses itself
+mix pure_fun --all   # it analyses itself
 ```
 
 Running it on itself reports every function of the analysis core as

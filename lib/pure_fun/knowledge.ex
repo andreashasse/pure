@@ -1,4 +1,4 @@
-defmodule Pure.Knowledge do
+defmodule PureFun.Knowledge do
   @moduledoc """
   What the analyser knows about functions it cannot look inside.
 
@@ -8,16 +8,16 @@ defmodule Pure.Knowledge do
   as pure. This module is the hand-maintained ground truth that stops the
   fixpoint from bottoming out in a lie.
 
-      iex> Pure.Knowledge.lookup(IO, :puts, 1)
+      iex> PureFun.Knowledge.lookup(IO, :puts, 1)
       {:impure, :io}
 
-      iex> Pure.Knowledge.lookup(String, :upcase, 1)
+      iex> PureFun.Knowledge.lookup(String, :upcase, 1)
       :pure
 
-      iex> Pure.Knowledge.lookup(Enum, :map, 2)
+      iex> PureFun.Knowledge.lookup(Enum, :map, 2)
       {:hof, [2]}
 
-      iex> Pure.Knowledge.lookup(SomeUnknownLib, :frobnicate, 1)
+      iex> PureFun.Knowledge.lookup(SomeUnknownLib, :frobnicate, 1)
       :unknown
 
   A `{:hof, positions}` answer means "pure as long as the funs given at
@@ -25,8 +25,8 @@ defmodule Pure.Knowledge do
   arguments at each call site.
   """
 
-  # Not annotated for the same reason `Pure.Annotation` is not: reading an
-  # `@pure except: [...]` calls `categories/0` at compile time.
+  # Not annotated for the same reason `PureFun.Annotation` is not: reading an
+  # `@pure_fun except: [...]` calls `categories/0` at compile time.
   @typedoc "Why a function is impure."
   @type category ::
           :io
@@ -52,7 +52,7 @@ defmodule Pure.Knowledge do
   @type answer :: :pure | {:impure, category()} | {:hof, [pos_integer()]} | :unknown
 
   # The same list as the type above, as data. It is the vocabulary an
-  # `@pure except: [...]` annotation may name, so it is public API rather
+  # `@pure_fun except: [...]` annotation may name, so it is public API rather
   # than an implementation detail.
   @categories [
     :io,
@@ -84,7 +84,7 @@ defmodule Pure.Knowledge do
   @doc """
   Every effect class, in report order.
 
-      iex> :time in Pure.Knowledge.categories()
+      iex> :time in PureFun.Knowledge.categories()
       true
   """
   @spec categories() :: [category()]
@@ -93,10 +93,10 @@ defmodule Pure.Knowledge do
   @doc """
   Whether a class means "the analyser could not tell" rather than "there is an effect".
 
-      iex> Pure.Knowledge.lost_trail?(:dynamic_call)
+      iex> PureFun.Knowledge.lost_trail?(:dynamic_call)
       true
 
-      iex> Pure.Knowledge.lost_trail?(:io)
+      iex> PureFun.Knowledge.lost_trail?(:io)
       false
   """
   @spec lost_trail?(category()) :: boolean()
@@ -632,7 +632,7 @@ defmodule Pure.Knowledge do
   @doc """
   Human-readable one-liner for an effect category.
 
-      iex> Pure.Knowledge.describe(:process_dictionary)
+      iex> PureFun.Knowledge.describe(:process_dictionary)
       "reads or writes the process dictionary"
   """
   @spec describe(category()) :: String.t()

@@ -1,4 +1,4 @@
-defmodule Pure.Sample.Quiet do
+defmodule PureFun.Sample.Quiet do
   @moduledoc "A struct whose String.Chars implementation is pure."
   defstruct [:name]
 
@@ -7,7 +7,7 @@ defmodule Pure.Sample.Quiet do
   end
 end
 
-defmodule Pure.Sample.Loud do
+defmodule PureFun.Sample.Loud do
   @moduledoc "A struct whose String.Chars implementation is not."
   defstruct [:name]
 
@@ -19,15 +19,15 @@ defmodule Pure.Sample.Loud do
   end
 end
 
-defmodule Pure.Sample.Dispatch do
+defmodule PureFun.Sample.Dispatch do
   @moduledoc """
   Protocol dispatch, which is only as pure as the implementations it can
   reach.
   """
 
-  def quiet(name), do: to_string(%Pure.Sample.Quiet{name: name})
+  def quiet(name), do: to_string(%PureFun.Sample.Quiet{name: name})
 
-  def loud(name), do: to_string(%Pure.Sample.Loud{name: name})
+  def loud(name), do: to_string(%PureFun.Sample.Loud{name: name})
 
   def unknown_term(term), do: to_string(term)
 

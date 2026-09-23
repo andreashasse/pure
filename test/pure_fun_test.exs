@@ -1,40 +1,40 @@
 defmodule PureTest do
   use ExUnit.Case, async: true
 
-  doctest Pure
+  doctest PureFun
 
   test "verdict/2 tells apart a function that was not analysed" do
-    analysis = Pure.analyze(modules: [Pure.Sample])
-    assert Pure.verdict(analysis, {Pure.Sample, :add, 2}) == :pure
-    assert Pure.verdict(analysis, {Nope, :nope, 0}) == :not_analyzed
+    analysis = PureFun.analyze(modules: [PureFun.Sample])
+    assert PureFun.verdict(analysis, {PureFun.Sample, :add, 2}) == :pure
+    assert PureFun.verdict(analysis, {Nope, :nope, 0}) == :not_analyzed
   end
 
   test "pure? is false for anything that is not a promise" do
-    analysis = Pure.analyze(modules: [Pure.Sample])
-    assert Pure.pure?(analysis, {Pure.Sample, :add, 2})
-    refute Pure.pure?(analysis, {Pure.Sample, :writes, 1})
-    refute Pure.pure?(analysis, {Pure.Sample, :hof, 2})
-    refute Pure.pure?(analysis, {Pure.Sample, :dynamic, 2})
+    analysis = PureFun.analyze(modules: [PureFun.Sample])
+    assert PureFun.pure?(analysis, {PureFun.Sample, :add, 2})
+    refute PureFun.pure?(analysis, {PureFun.Sample, :writes, 1})
+    refute PureFun.pure?(analysis, {PureFun.Sample, :hof, 2})
+    refute PureFun.pure?(analysis, {PureFun.Sample, :dynamic, 2})
   end
 
   test "a module whose code cannot be read is skipped rather than assumed pure" do
     # Preloaded modules are in the runtime before any code path exists,
     # so there is no beam file to read abstract code from.
-    %{results: results, skipped: skipped} = Pure.analyze(modules: [:erlang])
+    %{results: results, skipped: skipped} = PureFun.analyze(modules: [:erlang])
     assert results == %{}
     assert [{:erlang, :no_debug_info}] = skipped
   end
 
-  test "the @pure annotation is recorded as a persisted attribute" do
+  test "the @pure_fun annotation is recorded as a persisted attribute" do
     defmodule Annotated do
-      use Pure
+      use PureFun
 
-      @pure true
+      @pure_fun true
       def kept(x), do: x
 
       def plain(x), do: x
 
-      @pure true
+      @pure_fun true
       defp helper(x), do: x
 
       def uses_helper(x), do: helper(x)
@@ -49,9 +49,9 @@ defmodule PureTest do
 
   test "the annotation applies to the function, not to every later one" do
     defmodule OnlyFirst do
-      use Pure
+      use PureFun
 
-      @pure true
+      @pure_fun true
       def first(x), do: x
       def second(x), do: x
     end
@@ -61,9 +61,9 @@ defmodule PureTest do
 
   test "an annotation on a multi-clause function is recorded once" do
     defmodule MultiClause do
-      use Pure
+      use PureFun
 
-      @pure true
+      @pure_fun true
       def run(0), do: :zero
       def run(n), do: n
     end
@@ -73,12 +73,12 @@ defmodule PureTest do
 
   test "a waiver is recorded next to the function it belongs to" do
     defmodule Waived do
-      use Pure
+      use PureFun
 
-      @pure except: [:time, :io]
+      @pure_fun except: [:time, :io]
       def stamped(x), do: x
 
-      @pure true
+      @pure_fun true
       def plain(x), do: x
     end
 
@@ -87,9 +87,9 @@ defmodule PureTest do
 
   test "a default argument is annotated at every arity it produces" do
     defmodule Defaults do
-      use Pure
+      use PureFun
 
-      @pure true
+      @pure_fun true
       def fee(amount, rate \\ 0.03), do: amount * rate
     end
 
@@ -98,45 +98,45 @@ defmodule PureTest do
 
   test "a module-wide annotation is recorded once, for the module" do
     defmodule WholeModule do
-      use Pure
+      use PureFun
 
-      @pure_module except: [:time]
+      @pure_fun_module except: [:time]
 
       def stamped(x), do: x
     end
 
-    assert WholeModule.__info__(:attributes) |> Keyword.get_values(:pure_module) ==
+    assert WholeModule.__info__(:attributes) |> Keyword.get_values(:pure_fun_module) ==
              [[except: [:time]]]
   end
 
   test "a misspelt effect class fails the compile rather than waiving nothing" do
-    assert_raise ArgumentError, ~r/@pure on .*\.stamped\/1 waives :tyme/, fn ->
+    assert_raise ArgumentError, ~r/@pure_fun on .*\.stamped\/1 waives :tyme/, fn ->
       defmodule Misspelt do
-        use Pure
+        use PureFun
 
-        @pure except: [:tyme]
+        @pure_fun except: [:tyme]
         def stamped(x), do: x
       end
     end
   end
 
-  test "@pure false says what to do instead" do
+  test "@pure_fun false says what to do instead" do
     assert_raise ArgumentError, ~r/is set to `false`.*credo:disable-for-next-line/s, fn ->
       defmodule OptedOut do
-        use Pure
+        use PureFun
 
-        @pure false
+        @pure_fun false
         def plain(x), do: x
       end
     end
   end
 
   test "a module-wide annotation is checked too" do
-    assert_raise ArgumentError, ~r/@pure_module on .* waives :tyme/, fn ->
+    assert_raise ArgumentError, ~r/@pure_fun_module on .* waives :tyme/, fn ->
       defmodule MisspeltModule do
-        use Pure
+        use PureFun
 
-        @pure_module except: [:tyme]
+        @pure_fun_module except: [:tyme]
 
         def plain(x), do: x
       end
@@ -145,7 +145,7 @@ defmodule PureTest do
 
   defp annotations(module) do
     module.__info__(:attributes)
-    |> Keyword.get_values(:pure_annotated)
+    |> Keyword.get_values(:pure_fun_annotated)
     |> List.flatten()
   end
 
@@ -153,77 +153,83 @@ defmodule PureTest do
     setup do
       %{
         analysis:
-          Pure.analyze(
+          PureFun.analyze(
             modules: [
-              Pure.Sample.Waivers,
-              Pure.Sample.PureModule,
-              Pure.Sample.PureModule.Strict
+              PureFun.Sample.Waivers,
+              PureFun.Sample.PureModule,
+              PureFun.Sample.PureModule.Strict
             ]
           )
       }
     end
 
     test "an effect the annotation owns up to is not a violation", %{analysis: analysis} do
-      assert Pure.verdict(analysis, {Pure.Sample.Waivers, :stamped, 1}) ==
+      assert PureFun.verdict(analysis, {PureFun.Sample.Waivers, :stamped, 1}) ==
                {:impure, [{:time, {DateTime, :utc_now, 0}, nil}]}
 
-      refute List.keymember?(Pure.violations(analysis), {Pure.Sample.Waivers, :stamped, 1}, 0)
+      refute List.keymember?(
+               PureFun.violations(analysis),
+               {PureFun.Sample.Waivers, :stamped, 1},
+               0
+             )
     end
 
     test "only the effects that were not waived are reported", %{analysis: analysis} do
-      assert Pure.violations(analysis) == [
-               {{Pure.Sample.PureModule, :writes, 1},
-                {:impure, [{:io, {IO, :puts, 1}, {Pure.Sample.PureModule, :shout, 1}}]}},
-               {{Pure.Sample.PureModule.Strict, :now_and_then, 1},
+      assert PureFun.violations(analysis) == [
+               {{PureFun.Sample.PureModule, :writes, 1},
+                {:impure, [{:io, {IO, :puts, 1}, {PureFun.Sample.PureModule, :shout, 1}}]}},
+               {{PureFun.Sample.PureModule.Strict, :now_and_then, 1},
                 {:impure, [{:time, {DateTime, :utc_now, 0}, nil}]}},
-               {{Pure.Sample.Waivers, :calls_a_waived_function, 1},
-                {:impure, [{:time, {DateTime, :utc_now, 0}, {Pure.Sample.Waivers, :stamped, 1}}]}},
-               {{Pure.Sample.Waivers, :still_writes, 1}, {:impure, [{:io, {IO, :puts, 1}, nil}]}}
+               {{PureFun.Sample.Waivers, :calls_a_waived_function, 1},
+                {:impure,
+                 [{:time, {DateTime, :utc_now, 0}, {PureFun.Sample.Waivers, :stamped, 1}}]}},
+               {{PureFun.Sample.Waivers, :still_writes, 1},
+                {:impure, [{:io, {IO, :puts, 1}, nil}]}}
              ]
     end
 
     test "a waiver that has outlived its effect is reported apart", %{analysis: analysis} do
-      assert Pure.stale_waivers(analysis) == [
-               {{Pure.Sample.Waivers, :outgrew_its_waiver, 1}, [:time]},
-               {{Pure.Sample.Waivers, :still_writes, 1}, [:time]}
+      assert PureFun.stale_waivers(analysis) == [
+               {{PureFun.Sample.Waivers, :outgrew_its_waiver, 1}, [:time]},
+               {{PureFun.Sample.Waivers, :still_writes, 1}, [:time]}
              ]
     end
 
     test "a module-wide waiver one function needs is not stale for the rest", %{
       analysis: analysis
     } do
-      refute List.keymember?(Pure.stale_waivers(analysis), Pure.Sample.PureModule, 0)
+      refute List.keymember?(PureFun.stale_waivers(analysis), PureFun.Sample.PureModule, 0)
     end
 
     test "a function may not widen what its module waives", %{analysis: analysis} do
-      assert Pure.annotation_problems(analysis) == [
-               {{Pure.Sample.PureModule, :widened, 1}, {:widens, [:io]}}
+      assert PureFun.annotation_problems(analysis) == [
+               {{PureFun.Sample.PureModule, :widened, 1}, {:widens, [:io]}}
              ]
     end
 
     test "a module-wide claim covers public functions only", %{analysis: analysis} do
       assert %{annotation: %{scope: :module}} =
-               analysis.results[{Pure.Sample.PureModule, :plain, 2}]
+               analysis.results[{PureFun.Sample.PureModule, :plain, 2}]
 
-      assert %{annotation: nil} = analysis.results[{Pure.Sample.PureModule, :shout, 1}]
+      assert %{annotation: nil} = analysis.results[{PureFun.Sample.PureModule, :shout, 1}]
     end
 
     test "a nested module answers for itself", %{analysis: analysis} do
       assert %{annotation: %{scope: :module, except: []}} =
-               analysis.results[{Pure.Sample.PureModule.Strict, :double, 1}]
+               analysis.results[{PureFun.Sample.PureModule.Strict, :double, 1}]
 
       # The same body passes in the module that encloses it.
-      assert Pure.verdict(analysis, {Pure.Sample.PureModule, :stamped, 1}) ==
-               Pure.verdict(analysis, {Pure.Sample.PureModule.Strict, :now_and_then, 1})
+      assert PureFun.verdict(analysis, {PureFun.Sample.PureModule, :stamped, 1}) ==
+               PureFun.verdict(analysis, {PureFun.Sample.PureModule.Strict, :now_and_then, 1})
     end
 
     test "the functions the compiler writes are nobody's promise", %{analysis: analysis} do
-      assert %{annotation: nil} = analysis.results[{Pure.Sample.PureModule, :__info__, 1}]
+      assert %{annotation: nil} = analysis.results[{PureFun.Sample.PureModule, :__info__, 1}]
     end
   end
 
   test "a module that does not exist is reported" do
-    %{results: results, skipped: skipped} = Pure.analyze(modules: [NoSuchModuleAtAll])
+    %{results: results, skipped: skipped} = PureFun.analyze(modules: [NoSuchModuleAtAll])
     assert results == %{}
     assert [{NoSuchModuleAtAll, :not_found}] = skipped
   end
