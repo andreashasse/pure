@@ -65,7 +65,8 @@ if Code.ensure_loaded?(Credo.Check) do
           `%{{module, function, arity} => answer}` map, where an answer is
           `:pure`, `{:impure, class}` or `{:hof, positions}`. Merged over the
           `pure_fun: [known: %{...}]` entry in `mix.exs`, which both this check
-          and `mix pure_fun` read.
+          and `mix pure_fun` read, and over its `presets:`. A preset's table
+          can be named here too, as `known: PureFun.Presets.ecto()`.
           """,
           follow_deps: """
           Follow calls into dependencies. On by default: without it every
@@ -116,7 +117,7 @@ if Code.ensure_loaded?(Credo.Check) do
     defp known(params) do
       Mix.Project.config()
       |> Keyword.get(:pure_fun, [])
-      |> Keyword.get(:known, %{})
+      |> PureFun.Presets.known()
       |> Map.merge(Params.get(params, :known, __MODULE__))
     end
 

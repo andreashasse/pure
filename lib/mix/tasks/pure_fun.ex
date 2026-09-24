@@ -34,6 +34,7 @@ defmodule Mix.Tasks.PureFun do
       def project do
         [
           pure_fun: [
+            presets: [:ecto, :gettext],
             known: %{
               {MyLib.Cache, :get, 1} => {:impure, :ets},
               {MyLib.Fold, :run, 2} => {:hof, [2]}
@@ -41,6 +42,9 @@ defmodule Mix.Tasks.PureFun do
           ]
         ]
       end
+
+  `presets:` names the reviewed tables in `PureFun.Presets`, and `known:`
+  wins over them.
   """
 
   use Mix.Task
@@ -68,7 +72,7 @@ defmodule Mix.Tasks.PureFun do
       :timer.tc(fn ->
         PureFun.analyze(
           paths: PureFun.Beam.build_dirs(deps: deps?),
-          known: Keyword.get(config, :known, %{}),
+          known: PureFun.Presets.known(config),
           roots: roots
         )
       end)
