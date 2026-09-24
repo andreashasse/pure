@@ -43,6 +43,16 @@ defmodule PureFun.Presets do
     {Ecto.Changeset, :unsafe_validate_unique, 4} => {:impure, :network}
   }
 
+  # Each one calls the related schema's changeset/2, or the `with:` fun,
+  # and which module that is is only known at runtime. Pure would hide
+  # whatever that function does.
+  @ecto_dynamic %{
+    {Ecto.Changeset, :cast_assoc, 2} => {:impure, :dynamic_call},
+    {Ecto.Changeset, :cast_assoc, 3} => {:impure, :dynamic_call},
+    {Ecto.Changeset, :cast_embed, 2} => {:impure, :dynamic_call},
+    {Ecto.Changeset, :cast_embed, 3} => {:impure, :dynamic_call}
+  }
+
   @ecto_hofs %{
     {Ecto.Changeset, :optimistic_lock, 3} => {:hof, [3]},
     # The fun runs later, inside the repo transaction, and is usually
@@ -80,10 +90,6 @@ defmodule PureFun.Presets do
     {Ecto.Changeset, :assoc_constraint, 3},
     {Ecto.Changeset, :cast, 3},
     {Ecto.Changeset, :cast, 4},
-    {Ecto.Changeset, :cast_assoc, 2},
-    {Ecto.Changeset, :cast_assoc, 3},
-    {Ecto.Changeset, :cast_embed, 2},
-    {Ecto.Changeset, :cast_embed, 3},
     {Ecto.Changeset, :change, 1},
     {Ecto.Changeset, :change, 2},
     {Ecto.Changeset, :changed?, 2},
@@ -163,6 +169,7 @@ defmodule PureFun.Presets do
   @ecto @ecto_pure
         |> Map.new(&{&1, :pure})
         |> Map.merge(@ecto_hofs)
+        |> Map.merge(@ecto_dynamic)
         |> Map.merge(@ecto_impure)
 
   # Every translation reads the locale from the process dictionary, which
@@ -204,6 +211,11 @@ defmodule PureFun.Presets do
   Building, casting and validating a changeset is pure. The functions
   that take a fun are pure as long as that fun is, and
   `unsafe_validate_unique/3,4` is impure, because it runs a query.
+  `cast_assoc/2,3` and `cast_embed/2,3` call the related schema's
+  `changeset/2`, which is only known at runtime, so they are
+  `:dynamic_call` and a caller's verdict is `unknown`. Once that
+  changeset is annotated itself, the caller can say
+  `@pure_fun except: [:dynamic_call]`.
 
   It trusts every `Ecto.Type` in the build to cast, dump and load purely.
   A custom type that reads the clock or the application environment in
@@ -215,6 +227,9 @@ defmodule PureFun.Presets do
 
       iex> PureFun.Presets.ecto()[{Ecto.Changeset, :validate_change, 3}]
       {:hof, [3]}
+
+      iex> PureFun.Presets.ecto()[{Ecto.Changeset, :cast_embed, 3}]
+      {:impure, :dynamic_call}
   """
   @spec ecto() :: table()
   def ecto, do: @ecto

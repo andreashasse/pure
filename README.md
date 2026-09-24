@@ -232,7 +232,7 @@ pure_fun: [presets: [:ecto, :gettext]]
 
 | Preset | Says |
 | --- | --- |
-| `:ecto` | Building, casting and validating a changeset is pure. `validate_change/3`, `update_change/3`, `prepare_changes/2`, `traverse_errors/2` and the other functions that take a fun are pure as long as that fun is. `unsafe_validate_unique/3,4` runs a query and is impure (`:network`). |
+| `:ecto` | Building, casting and validating a changeset is pure. `validate_change/3`, `update_change/3`, `prepare_changes/2`, `traverse_errors/2` and the other functions that take a fun are pure as long as that fun is. `unsafe_validate_unique/3,4` runs a query and is impure (`:network`). `cast_assoc` and `cast_embed` call the related schema's `changeset/2`, which is only known at runtime, so they are `:dynamic_call`: the caller is `unknown` until it says `except: [:dynamic_call]`. |
 | `:gettext` | A translation reads the locale from the process dictionary and does nothing else, so it is `:process_dictionary`. A function that translates says `@pure_fun except: [:process_dictionary]`. |
 
 A preset is a trust decision. `:ecto` assumes every `Ecto.Type` casts,

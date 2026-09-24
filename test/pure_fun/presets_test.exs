@@ -65,6 +65,12 @@ defmodule PureFun.PresetsTest do
                analysis[{Schema, :unique, 2}].verdict
     end
 
+    test "casting an embed cannot be settled, because the related changeset is picked at runtime",
+         %{analysis: analysis} do
+      assert {:unknown, [{:dynamic_call, {Ecto.Changeset, :cast_embed, 2}, nil}]} =
+               analysis[{Schema, :embed, 1}].verdict
+    end
+
     test "a validator is only as pure as the fun it is given", %{analysis: analysis} do
       assert analysis[{Schema, :validate, 2}].verdict == {:conditional, [2]}
     end
@@ -80,6 +86,9 @@ defmodule PureFun.PresetsTest do
       ]),
       function(:unique, [var(:Cs), var(:Repo)], [
         call(Ecto.Changeset, :unsafe_validate_unique, [var(:Cs), {:atom, 1, :email}, var(:Repo)])
+      ]),
+      function(:embed, [var(:Cs)], [
+        call(Ecto.Changeset, :cast_embed, [var(:Cs), {:atom, 1, :addresses}])
       ]),
       function(:validate, [var(:Cs), var(:Fun)], [
         call(Ecto.Changeset, :validate_change, [var(:Cs), {:atom, 1, :name}, var(:Fun)])
