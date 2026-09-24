@@ -174,7 +174,7 @@ compiled at all and `pure_fun` still brings nothing with it.
 
 | Param | Effect |
 | --- | --- |
-| `known` | The same `%{mfa => answer}` map as `mix.exs`, merged over it. |
+| `known` | The same `%{mfa => answer}` map as `mix.exs`, merged over it and its presets. `PureFun.Presets.ecto()` works here too. |
 | `follow_deps` | Follow calls into dependencies. On by default; without it, a call into a library is `unknown` and an annotation that reaches one cannot be kept. |
 
 The check reads annotations from the source and answers from the
@@ -218,6 +218,29 @@ def project do
   ]
 end
 ```
+
+### Presets
+
+Ecto and Gettext pick most of their callees at runtime, so followed call
+by call every changeset looks impure: `cast/3` can reach any
+`Ecto.Type` in the build, and a translation can reach a logger. Two
+reviewed tables say what their public APIs do instead:
+
+```elixir
+pure_fun: [presets: [:ecto, :gettext]]
+```
+
+| Preset | Says |
+| --- | --- |
+| `:ecto` | Building, casting and validating a changeset is pure. `validate_change/3`, `update_change/3`, `prepare_changes/2`, `traverse_errors/2` and the other functions that take a fun are pure as long as that fun is. `unsafe_validate_unique/3,4` runs a query and is impure (`:network`). |
+| `:gettext` | A translation reads the locale from the process dictionary and does nothing else, so it is `:process_dictionary`. A function that translates says `@pure_fun except: [:process_dictionary]`. |
+
+A preset is a trust decision. `:ecto` assumes every `Ecto.Type` casts,
+dumps and loads purely, so a custom type that reads the clock in
+`cast/1` is not reported through `cast/3`. The `Ecto.Query` builder and
+`Ecto.Repo` are not covered. `known:` wins over a preset, and the tables
+are `PureFun.Presets.ecto/0` and `PureFun.Presets.gettext/0`, for
+reading or for `.credo.exs`.
 
 ## Dispatch
 
@@ -292,7 +315,8 @@ lie, and it always wins over what the code appears to do.
   makes the enclosing function impure even if the fun is never applied.
   Deliberately conservative.
 - **The knowledge base is hand-maintained.** It covers OTP and Elixir's
-  standard library; anything else is `unknown` until you teach it.
+  standard library, and Ecto and Gettext through their presets; anything
+  else is `unknown` until you teach it.
 - **Determinism is not proven.** Non-termination, allocation, atom table
   growth and scheduling are not effects here.
 

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Presets for Ecto and Gettext: `pure_fun: [presets: [:ecto, :gettext]]` in `mix.exs`. They make the changeset API pure, keep `Ecto.Changeset.unsafe_validate_unique/3,4` impure, and report a translation as reading the process dictionary and nothing else. `:known` entries win over a preset. The tables are also available as `PureFun.Presets.ecto/0` and `PureFun.Presets.gettext/0`.
+
 ## [0.1.1] - 2026-09-23
 
 ### Added
