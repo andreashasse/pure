@@ -23,7 +23,7 @@ the function that has it.
 
 ```elixir
 def deps do
-  [{:pure_fun, "~> 0.1", runtime: false}]
+  [{:pure_fun, "~> 0.1.2", runtime: false}]
 end
 ```
 
